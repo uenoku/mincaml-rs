@@ -1,0 +1,13 @@
+[package]
+name = "mincaml-rs"
+version = "0.1.0"
+authors = ["uenoku <uenoku.tokotoko@gmail.com>"]
+edition = "2018"
+build="build.rs"
+
+[dependencies]
+lalrpop-util = "0.16.2"
+regex = "0.2.0"
+
+[build-dependencies]
+lalrpop = "0.16.2"
