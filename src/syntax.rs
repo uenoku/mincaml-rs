@@ -17,11 +17,13 @@ pub enum Op {
     Sub,
     Div,
     EQ,
+    NE,
     LE,
     LT,
     GE,
     GT,
     FAdd,
+    FSub,
     FMul,
     FDiv,
     Neg,
@@ -46,12 +48,18 @@ pub struct Var {
     name: String,
     ty: Box<Type>,
 }
+pub fn getvar(name: String) -> Var {
+    Var {
+        name: name,
+        ty: Box::new(Type::TyVar(genvar())),
+    }
+}
 
 #[derive(Debug)]
 pub struct Fundef {
-    name: Var,
-    args: Vec<Var>,
-    body: BE,
+    pub name: Var,
+    pub args: Vec<Var>,
+    pub body: BE,
 }
 
 type BE = Box<Expr>;
@@ -59,10 +67,11 @@ type BE = Box<Expr>;
 #[derive(Debug)]
 pub enum Expr {
     EConst(Const),
+    EVar(Var),
     EOp(Op, Vec<BE>),
     EIf(BE, BE, BE),
     ELet(Var, BE, BE),
-    ELetTuple(Var, BE, BE),
+    ELetTuple(Vec<Var>, BE, BE),
     ELetRec(Fundef, BE),
     EApp(BE, Vec<BE>),
     ETuple(Vec<BE>),

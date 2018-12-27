@@ -1,23 +1,125 @@
 use std::str::FromStr;
 
-use mincaml_rs::syntax::{Op,Const,Expr};
-
+use mincaml_rs::syntax::{Op,Const,Expr,getvar,genvar,Var,Fundef};
 
 grammar;
-pub Expr : Box<Expr> = {
-    SimpleExpr,
+
+Tier<Ops,NextTier>: Box<Expr> = {
+    <e1:Tier<Ops,NextTier>> <op:Ops> <e2:NextTier> => Box::new(Expr::EOp(op, vec![e1,e2])),
+    NextTier
 };
+
+pub Expr = Expr8;
+
+
+// LetTuple
+Expr8: Box<Expr> = {
+    "let" "(" <e1:Pat> ")" "=" <e2:Expr8> "in" <e3:Expr8> => Box::new(Expr::ELetTuple(e1,e2,e3)),
+    Expr7,
+};
+
+// Tupleは両側に括弧があるようにする
+Expr7: Box<Expr> = {
+    "(" <e1:Elems> ")" => Box::new(Expr::ETuple(e1)),
+    Expr6,
+};
+
+// LetRec
+Expr6: Box<Expr> = {
+    "let" "rec" <f:Fun> "in" <cont:Expr> => Box::new(Expr::ELetRec(f,cont)),
+    Expr5,
+};
+
+// Let
+Expr5: Box<Expr> = {
+    "let" <e1:Id> "=" <e2:Expr> "in" <e3:Expr> => Box::new(Expr::ELet(e1,e2,e3)),
+    Expr4,
+};
+
+// If 
+// then の後ろ elseの後ろは自分が来ても良い
+Expr4 : Box<Expr> = {
+    "if" <e1:Expr3> "then" <e2:Expr4> "else" <e3:Expr4> => 
+    Box::new(Expr::EIf(e1,e2,e3)),
+    Expr3,
+}; 
+Expr3 = Tier<CondOp, Expr2>; 
+Expr2 = Tier<TermOp, Expr1>; 
+Expr1 = Tier<FactorOp, SimpleExpr>;
+Elems: Vec<Box<Expr>> = {
+    <e1:Elems> "," <e2:Expr> => {
+        let mut v_ = e1;
+        v_.push(e2);
+        v_ 
+    },
+    <e1:Expr> "," <e2:Expr> => vec![e1,e2],
+};
+Pat: Vec<Var> = {
+    <e1:Pat> "," <e2:Id> => {
+        let mut v_ = e1;
+        v_.push(e2);
+        v_ 
+    },
+    <e1:Id> "," <e2:Id> => vec![e1,e2],
+};
+
+Fun : Fundef = {
+    <n:Id> <args:Formal_Args> "=" <body:Expr> => 
+        Fundef {
+            name: n,
+            args: args,
+            body: body,
+        },
+};
+Formal_Args : Vec<Var> = {
+    <a:Id> <v:Formal_Args> => 
+    {
+        let mut v_ = v;
+        v_.insert(0,a);
+        v_
+    },
+    <a:Id>  => vec![a],
+};
+
+ArrayCreate: () = {
+    "Array.make" => (),
+    "create_array" => (),
+};
+CondOp : Op = {
+    "<=" => Op::LE,
+    "<" => Op::LT,
+    ">=" => Op::GE,
+    ">" => Op::GT,
+    "=" => Op::EQ,
+    "<>" => Op::NE,
+};
+
+TermOp : Op = {
+    "+." => Op::FAdd,
+    "-." => Op::FSub,
+    "+" => Op::Add,
+    "-" => Op::Sub,
+};
+FactorOp : Op = {
+    "*." => Op::FMul,
+    "/." => Op::FDiv,
+    "*" => Op::Mul,
+    "/" => Op::Div,
+};
+
 pub SimpleExpr: Box<Expr> = {
     "(" <e:Expr> ")" => e,
     Int => Box::new(Expr::EConst(Const::CInt(<>))),
     Float => Box::new(Expr::EConst(Const::CFloat(<>))),
     Bool => Box::new(Expr::EConst(Const::CBool(<>))),
+    Id => Box::new(Expr::EVar(<>)),
+    <e1:SimpleExpr> "." "(" <e2:Expr> ")" => Box::new(Expr::EOp(Op::Get(genvar()), vec![e1,e2]))
 };
 
 
 pub Int: i32 = r"-?[0-9]+" => i32::from_str(<>).unwrap();
 pub Float: f32 = r"-?[0-9]+\.[0-9]*" => f32::from_str(<>).unwrap();
-pub Id: String = r"[a-z]([0-9]|[a-z]|[A-Z]|_)*" => String::from(<>);
+pub Id: Var = r"[a-z]([0-9]|[a-z]|[A-Z]|_)*" => getvar(String::from(<>));
 pub Bool:bool = {
     "true" => true,
     "false" => false,
