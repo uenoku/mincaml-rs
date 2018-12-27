@@ -9,8 +9,14 @@ Tier<Ops,NextTier>: Box<Expr> = {
     NextTier
 };
 
-pub Expr = Expr8;
+pub Expr = Expr9;
 
+
+// App 
+Expr9: Box<Expr> = {
+   <e:SimpleExpr> <args:Actual_Args> => Box::new(Expr::EApp(e,args)),
+    Expr8,
+};
 
 // LetTuple
 Expr8: Box<Expr> = {
@@ -70,6 +76,14 @@ Fun : Fundef = {
             args: args,
             body: body,
         },
+};
+Actual_Args: Vec<Box<Expr>> = {
+    <a:Actual_Args> <e:SimpleExpr> => {
+        let mut v_ = a;
+        v_.push(e);
+        v_
+    },
+    SimpleExpr => vec![<>],
 };
 Formal_Args : Vec<Var> = {
     <a:Id> <v:Formal_Args> => 

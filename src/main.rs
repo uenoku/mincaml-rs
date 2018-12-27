@@ -1,7 +1,13 @@
 #[macro_use]
 extern crate lalrpop_util;
-
+extern crate getopts;
+mod arg_parse;
+mod syntax;
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
+use self::arg_parse::parse;
+use std::env;
+use std::fs::File;
+use std::io::Read;
 
 #[test]
 fn test_int() {
@@ -95,4 +101,21 @@ fn test_let_tuple() {
     );
 }
 
-fn main() {}
+#[test]
+fn test_app() {
+    assert!(
+        parser::ExprParser::new()
+            .parse("let f = g 2 2.3 true (if hoge then piyo else 3.0) in x ")
+            .is_ok()
+    );
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    let opts = parse(args).unwrap();
+    let mut file = File::open(opts.filename).unwrap();
+    let mut contents = String::new();
+    file.read_to_string(&mut contents);
+    let p = parser::ExprParser::new().parse(contents.as_str());
+    println!("{:?}", p);
+}
