@@ -1,15 +1,4 @@
-#[derive(Debug)]
-pub enum Type {
-    TyUnit,
-    TyBool,
-    TyInt,
-    TyFloat,
-    TyFun(Vec<Box<Type>>, Box<Type>),
-    TyTuple(Vec<Box<Type>>),
-    TyArray(Box<Type>),
-    TyVar(usize),
-}
-
+use crate::ty::Type;
 #[derive(Debug)]
 pub enum Op {
     Add,
@@ -45,13 +34,13 @@ pub enum Const {
 
 #[derive(Debug)]
 pub struct Var {
-    name: String,
-    ty: Box<Type>,
+    pub name: String,
+    pub ty: usize,
 }
 pub fn getvar(name: String) -> Var {
     Var {
         name: name,
-        ty: Box::new(Type::TyVar(genvar())),
+        ty: genvar(),
     }
 }
 
@@ -87,4 +76,7 @@ pub fn genvar() -> usize {
 pub fn genname() -> String {
     let v = genvar();
     v.to_string()
+}
+pub fn newvar() -> Var {
+    getvar(genname())
 }
