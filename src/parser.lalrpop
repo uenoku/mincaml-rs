@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::syntax::{Op,Const,Expr,getvar,newvar,genvar,Var,Fundef};
+use crate::syntax::{Op,Const,Expr,getvar,newvar,genvar,Var,Fundef,genname};
 
 grammar;
 
@@ -14,34 +14,33 @@ pub Expr = Expr8;
 // "let f = 1;2 in f"とかはうまく動かないようにする.
 // こっちのほうが健全では？？
 Expr8: Box<Expr> = {
-    <e1:Expr4> ";" <e2:Expr> =>  Box::new(Expr::ELet(newvar(),e1,e2)),
+    <e1:Expr4> ";" <e2:Expr> =>  Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
     <e1:Expr4> ";" => e1,
-    Expr7,
+    Expr4,
 };
 
-// 結合順序怪しいなあ
-Expr7:Box<Expr> = {
-    <e1:Expr6> <op:CondOp> <e2:Expr7> => Box::new(Expr::EOp(op, vec![e1,e2])),
-    Expr6
-};
-Expr6:Box<Expr> = {
-    <e1:Expr5> <op:TermOp> <e2:Expr6> => Box::new(Expr::EOp(op, vec![e1,e2])),
-    Expr5
-};
-Expr5:Box<Expr> = {
-    <e1:Expr4> <op:FactorOp> <e2:Expr5> => Box::new(Expr::EOp(op, vec![e1,e2])),
-    Expr4
-};
+//// 結合順序怪しいなあ
+//Expr7:Box<Expr> = {
+//    <e1:Expr6> <op:CondOp> <e2:Expr7> => Box::new(Expr::EOp(op, vec![e1,e2])),
+//    Expr6
+//};
+//Expr6:Box<Expr> = {
+//    <e1:Expr5> <op:TermOp> <e2:Expr6> => Box::new(Expr::EOp(op, vec![e1,e2])),
+//    Expr5
+//};
+//Expr5:Box<Expr> = {
+//    <e1:Expr4> <op:FactorOp> <e2:Expr5> => Box::new(Expr::EOp(op, vec![e1,e2])),
+//    Expr4
+//};
 Expr4 : Box<Expr> = {
     "if" <e1:Expr> "then" <e2:Expr> "else" <e3:Expr4> => 
     Box::new(Expr::EIf(e1,e2,e3)),
-    "let" <e1:Id> "=" <e2:Expr> "in" <e3:Expr4> => Box::new(Expr::ELet(e1,e2,e3)),
+    "let" <e1:Id> "=" <e2:Expr> "in" <e3:Expr4> => Box::new(Expr::ELet((e1,genvar()),e2,e3)),
     "(" <e1:Elems> ")" => Box::new(Expr::ETuple(e1)),
     "let" "(" <e1:Pat> ")" "=" <e2:Expr> "in" <e3:Expr4> => Box::new(Expr::ELetTuple(e1,e2,e3)),
     "let" "rec" <f:Fun> "in" <cont:Expr4> => Box::new(Expr::ELetRec(f,cont)),
-    <e1:SimpleExpr> "." "(" <e2:Expr> ")" "<-" <e3:Expr4> => Box::new(Expr::EOp(Op::Put(genvar()), vec![e1,e2,e3])),
-    <e1:SimpleExpr> "." "(" <e2:Expr> ")" => Box::new(Expr::EOp(Op::Get(genvar()), vec![e1,e2])),
-    Expr11,
+    <e1:SimpleExpr> "." "(" <e2:Expr> ")" "<-" <e3:Expr4> => Box::new(Expr::EOp(Op::Store, vec![e1,e2,e3])),
+    Expr3,
 }; 
 
 
@@ -53,19 +52,19 @@ Elems: Vec<Box<Expr>> = {
     },
     <e1:Expr> "," <e2:Expr> => vec![e1,e2],
 };
-Pat: Vec<Var> = {
+Pat: Vec<(Var,usize)> = {
     <e1:Pat> "," <e2:Id> => {
         let mut v_ = e1;
-        v_.push(e2);
+        v_.push((e2,genvar()));
         v_ 
     },
-    <e1:Id> "," <e2:Id> => vec![e1,e2],
+    <e1:Id> "," <e2:Id> => vec![(e1,genvar()),(e2,genvar())],
 };
 
 Fun : Fundef = {
     <n:Id> <args:Formal_Args> "=" <body:Expr> => 
         Fundef {
-            name: n,
+            name: (n,genvar()),
             args: args,
             body: body,
         },
@@ -78,14 +77,14 @@ Actual_Args: Vec<Box<Expr>> = {
     },
     SimpleExpr => vec![<>],
 };
-Formal_Args : Vec<Var> = {
+Formal_Args : Vec<(Var,usize)> = {
     <a:Id> <v:Formal_Args> => 
     {
         let mut v_ = v;
-        v_.insert(0,a);
+        v_.insert(0,(a,genvar()));
         v_
     },
-    <a:Id>  => vec![a],
+    <a:Id>  => vec![(a,genvar())],
 };
 
 ArrayCreate: () = {
@@ -114,12 +113,13 @@ FactorOp : Op = {
     "/" => Op::Div,
 };
 
-//Expr3 = Tier<CondOp, Expr1>; 
-//Expr2 = Tier<TermOp, Expr1>; 
-//Expr1 = Tier<FactorOp, Expr11>;
+Expr3 = Tier<CondOp, Expr2>; 
+Expr2 = Tier<TermOp, Expr1>; 
+Expr1 = Tier<FactorOp, Expr11>;
 // App 
 Expr11: Box<Expr> = {
    <e:SimpleExpr> <args:Actual_Args> => Box::new(Expr::EApp(e,args)),
+   <e1:SimpleExpr> "." "(" <e2:Expr> ")" => Box::new(Expr::EOp(Op::Load, vec![e1,e2])),
     Expr0,
 };
 Expr0 = SimpleExpr;

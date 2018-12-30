@@ -6,6 +6,7 @@ mod arg_parse;
 mod syntax;
 mod ty;
 mod typing;
+mod util;
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 use self::arg_parse::parse;
 use std::env;
@@ -111,5 +112,6 @@ fn main() {
     file.read_to_string(&mut contents);
     let p = parser::ExprParser::new().parse(contents.as_str()).unwrap();
     println!("{:?}", p);
-    typing::f(p);
+    let p = typing::f(p);
+    println!("{:?}", p);
 }

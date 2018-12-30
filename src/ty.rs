@@ -1,3 +1,4 @@
+use crate::syntax;
 #[derive(Debug, Clone)]
 pub enum Type {
     TyUnit,
@@ -8,4 +9,8 @@ pub enum Type {
     TyTuple(Vec<Type>),
     TyArray(Box<Type>),
     TyVar(usize),
+}
+
+pub fn alpha() -> Type {
+    Type::TyVar(syntax::genvar())
 }
