@@ -9,15 +9,15 @@ Tier<Ops,NextTier>: Box<Expr> = {
     NextTier
 };
 
-pub Expr = Expr8;
+pub Expr = Expr4;
 //// Semicolon  とりあえず;が来たら切るようにする.
 // "let f = 1;2 in f"とかはうまく動かないようにする.
 // こっちのほうが健全では？？
-Expr8: Box<Expr> = {
-    <e1:Expr4> ";" <e2:Expr> =>  Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
-    <e1:Expr4> ";" => e1,
-    Expr4,
-};
+//Expr8: Box<Expr> = {
+//    <e1:Expr4> ";" <e2:Expr> =>  Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
+//    <e1:Expr4> ";" => e1,
+//    Expr4,
+//};
 
 //// 結合順序怪しいなあ
 //Expr7:Box<Expr> = {
@@ -36,12 +36,17 @@ Expr4 : Box<Expr> = {
     "if" <e1:Expr> "then" <e2:Expr> "else" <e3:Expr4> => 
     Box::new(Expr::EIf(e1,e2,e3)),
     "let" <e1:Id> "=" <e2:Expr> "in" <e3:Expr4> => Box::new(Expr::ELet((e1,genvar()),e2,e3)),
-    "(" <e1:Elems> ")" => Box::new(Expr::ETuple(e1)),
     "let" "(" <e1:Pat> ")" "=" <e2:Expr> "in" <e3:Expr4> => Box::new(Expr::ELetTuple(e1,e2,e3)),
     "let" "rec" <f:Fun> "in" <cont:Expr4> => Box::new(Expr::ELetRec(f,cont)),
-    <e1:SimpleExpr> "." "(" <e2:Expr> ")" "<-" <e3:Expr4> => Box::new(Expr::EOp(Op::Store, vec![e1,e2,e3])),
-    Expr3,
+    <e1:Expr31> ";" => e1,
+    <e1:Expr31> ";" <e2:Expr4> =>  Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
+    <e1:SimpleExpr> "." "(" <e2:Expr> ")" "<-" <e3:Expr> => Box::new(Expr::EOp(Op::Store, vec![e1,e2,e3])),
+    Expr31,
 }; 
+
+Expr31:Box<Expr> = {
+    Expr3,
+};
 
 
 Elems: Vec<Box<Expr>> = {
@@ -78,19 +83,19 @@ Actual_Args: Vec<Box<Expr>> = {
     SimpleExpr => vec![<>],
 };
 Formal_Args : Vec<(Var,usize)> = {
-    <a:Id> <v:Formal_Args> => 
+    <a:Id_args> <v:Formal_Args> => 
     {
         let mut v_ = v;
         v_.insert(0,(a,genvar()));
         v_
     },
-    <a:Id>  => vec![(a,genvar())],
+    <a:Id_args>  => vec![(a,genvar())],
 };
 
-ArrayCreate: () = {
-    "Array.make" => (),
-    "create_array" => (),
-};
+//ArrayCreate: () = {
+//    "Array.make" => (),
+//    "create_array" => (),
+//};
 CondOp : Op = {
     "<=" => Op::LE,
     "<" => Op::LT,
@@ -118,8 +123,7 @@ Expr2 = Tier<TermOp, Expr1>;
 Expr1 = Tier<FactorOp, Expr11>;
 // App 
 Expr11: Box<Expr> = {
-   <e:SimpleExpr> <args:Actual_Args> => Box::new(Expr::EApp(e,args)),
-   <e1:SimpleExpr> "." "(" <e2:Expr> ")" => Box::new(Expr::EOp(Op::Load, vec![e1,e2])),
+    <e:SimpleExpr> <args:Actual_Args> => Box::new(Expr::EApp(e,args)),
     Expr0,
 };
 Expr0 = SimpleExpr;
@@ -131,12 +135,30 @@ pub SimpleExpr: Box<Expr> = {
     Float => Box::new(Expr::EConst(Const::CFloat(<>))),
     Bool => Box::new(Expr::EConst(Const::CBool(<>))),
     Id => Box::new(Expr::EVar(<>)),
+    "(" <e1:Elems> ")" => Box::new(Expr::ETuple(e1)),
+   <e1:SimpleExpr> "." "(" <e2:Expr> ")" => Box::new(Expr::EOp(Op::Load, vec![e1,e2])),
 };
 
 
 pub Int: i32 = r"-?[0-9]+" => i32::from_str(<>).unwrap();
 pub Float: f32 = r"-?[0-9]+\.[0-9]*" => f32::from_str(<>).unwrap();
-pub Id: Var = r"[a-z]([0-9]|[a-z]|[A-Z]|_)*" => getvar(String::from(<>));
+
+pub Id_args: Var = {
+    r"[a-z]([0-9]|[a-z]|[A-Z]|_)*" =>{
+        getvar(String::from(<>))
+    },
+    "()" => genname(),
+    "_" => genname(),
+
+};
+pub Id: Var = {
+    r"[a-z]([0-9]|[a-z]|[A-Z]|_)*" => {
+        println!("{}",<>);
+        getvar(String::from(<>))
+    },
+    "_" => genname(),
+
+};
 pub Bool:bool = {
     "true" => true,
     "false" => false,
