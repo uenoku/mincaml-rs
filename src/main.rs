@@ -3,6 +3,7 @@
 extern crate lalrpop_util;
 extern crate getopts;
 mod arg_parse;
+mod knormal;
 mod syntax;
 mod ty;
 mod typing;
@@ -12,6 +13,21 @@ use self::arg_parse::parse;
 use std::env;
 use std::fs::File;
 use std::io::Read;
+fn type_failed(x: &str) {
+    println!("{:?}", x);
+    println!("{:?}", parser::ExprParser::new().parse(&x));
+    let p = parser::ExprParser::new().parse(&x).unwrap();
+    let p = typing::f(p);
+    assert!(p.is_err());
+}
+fn type_check(x: &str) {
+    println!("{:?}", x);
+    println!("{:?}", parser::ExprParser::new().parse(&x));
+    let p = parser::ExprParser::new().parse(&x).unwrap();
+    let p = typing::f(p);
+    assert!(p.is_ok());
+}
+
 fn check(x: &str) {
     println!("{:?}", x);
     println!("{:?}", parser::ExprParser::new().parse(&x));
@@ -102,6 +118,14 @@ fn test_app() {
 #[test]
 fn test_semicolon() {
     check("print_int 3;2")
+}
+#[test]
+fn test_minrt() {
+    check("let a = sqrt (fsqr v.(0) +. fsqr v.(1) +. fsqr v.(2)) in ()");
+}
+#[test]
+fn test_type() {
+    type_check("let a = Array.make 2 2 in a.(0) <- if true then 1 else 3 ; a");
 }
 
 fn main() {

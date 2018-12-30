@@ -13,11 +13,11 @@ pub Expr = Expr4;
 //// Semicolon  とりあえず;が来たら切るようにする.
 // "let f = 1;2 in f"とかはうまく動かないようにする.
 // こっちのほうが健全では？？
-//Expr8: Box<Expr> = {
-//    <e1:Expr4> ";" <e2:Expr> =>  Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
-//    <e1:Expr4> ";" => e1,
-//    Expr4,
-//};
+Expr5: Box<Expr> = {
+    <e1:Expr4> ";" <e2:Expr> =>  Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
+    <e1:Expr4> ";" => e1,
+    Expr4,
+};
 
 //// 結合順序怪しいなあ
 //Expr7:Box<Expr> = {
@@ -33,14 +33,14 @@ pub Expr = Expr4;
 //    Expr4
 //};
 Expr4 : Box<Expr> = {
-    "if" <e1:Expr> "then" <e2:Expr> "else" <e3:Expr4> => 
+    "if" <e1:Expr> "then" <e2:Expr> "else" <e3:Expr> => 
     Box::new(Expr::EIf(e1,e2,e3)),
     "let" <e1:Id> "=" <e2:Expr> "in" <e3:Expr4> => Box::new(Expr::ELet((e1,genvar()),e2,e3)),
     "let" "(" <e1:Pat> ")" "=" <e2:Expr> "in" <e3:Expr4> => Box::new(Expr::ELetTuple(e1,e2,e3)),
     "let" "rec" <f:Fun> "in" <cont:Expr4> => Box::new(Expr::ELetRec(f,cont)),
-    <e1:Expr31> ";" => e1,
-    <e1:Expr31> ";" <e2:Expr4> =>  Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
-    <e1:SimpleExpr> "." "(" <e2:Expr> ")" "<-" <e3:Expr> => Box::new(Expr::EOp(Op::Store, vec![e1,e2,e3])),
+    //<e1:Expr4> ";" <e2:Expr31> =>  Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
+    //<e1:Expr31> ";" => e1,
+    <e1:SimpleExpr> "." "(" <e2:Expr> ")" "<-" <e3:Expr4> => Box::new(Expr::EOp(Op::Store, vec![e1,e2,e3])),
     Expr31,
 }; 
 

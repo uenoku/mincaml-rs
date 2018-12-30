@@ -14,3 +14,9 @@ pub enum Type {
 pub fn alpha() -> Type {
     Type::TyVar(syntax::genvar())
 }
+pub fn get_element(t: Type) -> Type {
+    match t {
+        Type::TyArray(y) => *y,
+        _ => unreachable!(),
+    }
+}

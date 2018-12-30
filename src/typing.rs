@@ -128,6 +128,7 @@ fn g(
         EConst(Const::CBool(_)) => no_constraints!(Type::TyBool),
         EConst(Const::CUnit) => no_constraints!(Type::TyUnit),
         EVar(v) => {
+            println!("{}", v);
             let x = env.get(&v);
             match x {
                 Some(y) => no_constraints!(Type::TyVar(*y)),
@@ -153,6 +154,12 @@ fn g(
             (Op::Not, [e1]) => uni!(e1, TyBool, TyBool),
             (Op::Neg, [e1]) => uni!(e1, TyInt, TyInt),
             (Op::FNeg, [e1]) => uni!(e1, TyFloat, TyFloat),
+            (Op::Array, [e1, e2]) => {
+                let (t1, c1) = g(e1.clone(), env)?;
+                let (t2, c2) = g(e2.clone(), env)?;
+                let c = concat_com(c1, c2).push_front((t1.clone(), TyInt));
+                Ok((TyArray(Box::new(t2)), c))
+            }
             (Op::Load, [e1, e2]) => {
                 let (t1, c1) = g(e1.clone(), env)?;
                 let (t2, c2) = g(e2.clone(), env)?;
@@ -210,9 +217,10 @@ fn g(
         ELetRec(fundef, e) => {
             // Let多相入れてえ
             let (name, ty) = fundef.name;
-            let env = HashTrieMap::insert(env, name, ty);
+            let env = HashTrieMap::insert(env, name.clone(), ty);
             let (t1, c1) = g(e, &env)?;
-            let vars: Vec<Type> = fundef.args.iter().map(|(x, y)| TyVar(*y)).collect();
+            let mut vars: Vec<Type> = fundef.args.iter().map(|(x, y)| TyVar(*y)).collect();
+
             let env_ = fundef
                 .args
                 .into_iter()
@@ -240,8 +248,29 @@ fn g(
     }
 }
 pub fn f(expr: Box<Expr>) -> Result<HashMap<usize, Type>, TypingError> {
+    let global_hardcode = vec![
+        "floor",
+        "not",
+        "int_of_float",
+        "print_char",
+        "print_int",
+        "read_int",
+        "read_float",
+        "reduction",
+        "kernel_cos",
+        "kernel_sin",
+        "kernel_atan",
+        "create_array",
+        "float_of_int",
+        "sqrt",
+    ];
     let mut unifier = HashMap::new();
-    let (_, constrains) = g(expr, &HashTrieMap::new())?;
+    let env = global_hardcode
+        .into_iter()
+        .fold(HashTrieMap::new(), |acc, i| {
+            HashTrieMap::insert(&acc, i.to_string(), genvar())
+        });
+    let (_, constrains) = g(expr, &env)?;
     unify(constrains, &mut unifier)?;
     Ok(unifier)
 }
