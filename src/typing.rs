@@ -14,27 +14,27 @@ pub enum TypingError {
     OccurenceCheckError(usize),
     UnboundedVariableError(Var),
 }
-fn occurence_check(ty: Type, v: usize) -> Result<(), TypingError> {
+fn occurence_check(ty: &Type, v: &usize) -> Result<(), TypingError> {
     match ty {
-        TyVar(u) if u == v => Err(TypingError::OccurenceCheckError(u)),
-        TyArray(u) => occurence_check(*u, v),
+        TyVar(u) if *u == *v => Err(TypingError::OccurenceCheckError(*u)),
+        TyArray(u) => occurence_check(&u, v),
         TyFun(args, ret) => {
-            occurence_check(*ret, v);
-            args.into_iter().try_for_each(|x| occurence_check(x, v))
+            occurence_check(&ret, v);
+            args.iter().try_for_each(|x| occurence_check(x, v))
         }
-        TyTuple(args) => args.into_iter().try_for_each(|x| occurence_check(x, v)),
+        TyTuple(args) => args.iter().try_for_each(|x| occurence_check(x, v)),
         _ => Ok(()),
     }
 }
 
-fn subst(ty: Type, v: usize, to: Type) -> Type {
-    let f = |x: Vec<Type>| x.into_iter().map(|y| subst(y, v, to.clone())).collect();
+fn subst(ty: &Type, v: &usize, to: &Type) -> Type {
+    let f = |x: &Vec<Type>| x.iter().map(|y| subst(y, v, to)).collect();
     match ty {
-        TyVar(u) if u == v => to,
-        TyArray(u) => TyArray(Box::new(subst(*u, v, to))),
-        TyFun(args, ret) => TyFun(f(args), Box::new(subst(*ret, v, to))),
-        TyTuple(args) => TyTuple(f(args)),
-        _ => ty,
+        TyVar(u) if *u == *v => to.clone(),
+        TyArray(u) => TyArray(Box::new(subst(&u, v, to))),
+        TyFun(args, ret) => TyFun(f(&args), Box::new(subst(&ret, v, to))),
+        TyTuple(args) => TyTuple(f(&args)),
+        _ => ty.clone(),
     }
 }
 fn gen_constraints(lhs: Vec<Type>, rhs: Vec<Type>, c: List<(Type, Type)>) -> List<(Type, Type)> {
@@ -59,19 +59,20 @@ fn unify(
         (TyFloat, TyFloat) => unify(rest, unifier),
         (TyVar(x), TyVar(y)) if x == y => unify(rest, unifier),
         (TyVar(x), rhs) => {
-            occurence_check(rhs.clone(), x);
-            let rhs_cls = rhs.clone();
+            occurence_check(&rhs, &x);
             // restの全てのxの出現をrhsに置き換える
+
+            let rhs_cls = rhs.clone();
             let c = map(
                 rest.clone(),
                 Box::new(move |(l, r)| {
-                    (subst(l, x, rhs_cls.clone()), subst(r, x, rhs_cls.clone()))
+                    (subst(&l, &x, &rhs_cls), subst(&r, &x, &rhs_cls))
                 }),
             );
             // unifierの全てのxの出現をrhsに置き換える
             unifier
                 .iter_mut()
-                .for_each(|(key, val)| *val = subst(val.clone(), x, rhs.clone()));
+                .for_each(|(key, val)| *val = subst(&val, &x, &rhs));
             if !unifier.contains_key(&x) {
                 unifier.insert(x, rhs);
             }

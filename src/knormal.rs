@@ -79,9 +79,8 @@ fn g(
         ),
         EOp(op, args) => {
             let (cls, args) = vec_knormalize(args, env, tyenv);
-            let opc = op.clone();
             let ty = {
-                match opc {
+                match op {
                     Op::Array => {
                         let (a, b, c) = &cls[1];
                         tyenv.get(b).unwrap().clone()
@@ -94,7 +93,7 @@ fn g(
                         let (a, b, c) = &cls[0];
                         ty::get_element(tyenv.get(&b).unwrap().clone())
                     }
-                    _ => syntax::infer_op(opc),
+                    _ => syntax::infer_op(&op),
                 }
             };
             (vec_to_expr(Box::new(KExpr::KOp(op, args)), cls), ty)
