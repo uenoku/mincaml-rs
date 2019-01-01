@@ -90,20 +90,20 @@ fn unify(
 }
 
 fn g(
-    expr: Box<Expr>,
+    expr: &Expr,
     env: &HashTrieMap<String, usize>,
 ) -> Result<(Type, List<(Type, Type)>), TypingError> {
     macro_rules! uni {
         ($e1:expr,$src:expr,$dst:expr) => {{
-            let (t1, c1) = g($e1.clone(), env)?;
+            let (t1, c1) = g(&$e1, env)?;
             let c = c1.push_front((t1, $src));
             Ok(($dst, c))
         }};
     }
     macro_rules! bin {
         ($e1:expr,$e2:expr,$src:expr,$dst:expr) => {{
-            let (t1, c1) = g($e1.clone(), env)?;
-            let (t2, c2) = g($e2.clone(), env)?;
+            let (t1, c1) = g(&$e1, env)?;
+            let (t2, c2) = g(&$e2, env)?;
             let c = concat_com(c1, c2)
                 .push_front((t1, $src))
                 .push_front((t2, $src));
@@ -117,20 +117,20 @@ fn g(
     }
     macro_rules! sub {
         ($e1:expr) => {
-            g($e1.clone(), env)?;
+            g(&$e1.clone(), env)?;
         };
     }
-    match *expr {
+    match expr {
         EConst(Const::CInt(_)) => no_constraints!(Type::TyInt),
         EConst(Const::CFloat(_)) => no_constraints!(Type::TyFloat),
         EConst(Const::CBool(_)) => no_constraints!(Type::TyBool),
         EConst(Const::CUnit) => no_constraints!(Type::TyUnit),
         EVar(v) => {
             println!("{}", v);
-            let x = env.get(&v);
+            let x = env.get(v);
             match x {
-                Some(y) => no_constraints!(Type::TyVar(*y)),
-                None => Err(TypingError::UnboundedVariableError(v)),
+                Some(y) => no_constraints!(Type::TyVar(y.clone())),
+                None => Err(TypingError::UnboundedVariableError(v.to_string())),
             }
         }
         // 厳しい
@@ -148,14 +148,14 @@ fn g(
             (Op::Neg, [e1]) => uni!(e1, TyInt, TyInt),
             (Op::FNeg, [e1]) => uni!(e1, TyFloat, TyFloat),
             (Op::Array, [e1, e2]) => {
-                let (t1, c1) = g(e1.clone(), env)?;
-                let (t2, c2) = g(e2.clone(), env)?;
+                let (t1, c1) = sub!(e1);
+                let (t2, c2) = sub!(e2);
                 let c = concat_com(c1, c2).push_front((t1.clone(), TyInt));
                 Ok((TyArray(Box::new(t2)), c))
             }
             (Op::Load, [e1, e2]) => {
-                let (t1, c1) = g(e1.clone(), env)?;
-                let (t2, c2) = g(e2.clone(), env)?;
+                let (t1, c1) = sub!(e1);
+                let (t2, c2) = sub!(e2);
                 let alpha = ty::alpha();
                 let c = concat_com(c1, c2)
                     .push_front((t1, TyArray(Box::new(alpha.clone()))))
@@ -163,9 +163,9 @@ fn g(
                 Ok((alpha, c))
             }
             (Op::Store, [e1, e2, e3]) => {
-                let (t1, c1) = g(e1.clone(), env)?;
-                let (t2, c2) = g(e2.clone(), env)?;
-                let (t3, c3) = g(e3.clone(), env)?;
+                let (t1, c1) = sub!(e1);
+                let (t2, c2) = sub!(e2);
+                let (t3, c3) = sub!(e3);
                 let c = concat_com(c1, concat_com(c2, c3))
                     .push_front((t1, TyArray(Box::new(t3.clone()))))
                     .push_front((t2, TyInt));
@@ -183,17 +183,17 @@ fn g(
         }
         ELet((v, ty), e1, e2) => {
             let (t1, c1) = sub!(e1);
-            let env = HashTrieMap::insert(env, v, ty);
-            let (t2, c2) = g(e2.clone(), &env)?;
-            Ok((t2, concat_com(c1, c2).push_front((TyVar(ty), t1))))
+            let env = HashTrieMap::insert(env, v.to_string(), ty.clone());
+            let (t2, c2) = g(&e2, &env)?;
+            Ok((t2, concat_com(c1, c2).push_front((TyVar(ty.clone()), t1))))
         }
         ELetTuple(v, e1, e2) => {
             let (t1, c1) = sub!(e1);
             let vars: Vec<Type> = v.iter().map(|(x, y)| TyVar(*y)).collect();
             let env = v.into_iter().fold(env.clone(), |acc, (name, ty)| {
-                HashTrieMap::insert(&acc, name, ty)
+                HashTrieMap::insert(&acc, name.clone(), ty.clone())
             });
-            let (t2, c2) = g(e2.clone(), &env)?;
+            let (t2, c2) = g(&e2, &env)?;
             let c = concat_com(c1, c2).push_front((t1, TyTuple(vars)));
             Ok((t2, c))
         }
@@ -201,7 +201,7 @@ fn g(
             let mut cs = List::new();
             let mut ts = vec![];
             for i in v.into_iter() {
-                let (ti, ci) = g(i, env)?;
+                let (ti, ci) = g(&i, env)?;
                 cs = concat_com(cs, ci);
                 ts.push(ti);
             }
@@ -209,19 +209,17 @@ fn g(
         }
         ELetRec(fundef, e) => {
             // Let多相入れてえ
-            let (name, ty) = fundef.name;
-            let env = HashTrieMap::insert(env, name.clone(), ty);
-            let (t1, c1) = g(e, &env)?;
-            let mut vars: Vec<Type> = fundef.args.iter().map(|(x, y)| TyVar(*y)).collect();
+            let (name, ty) = &fundef.name;
+            let env = HashTrieMap::insert(env, name.clone(), ty.clone());
+            let (t1, c1) = g(&e, &env)?;
+            let mut vars: Vec<Type> = fundef.args.iter().map(|(x, y)| TyVar(y.clone())).collect();
 
-            let env_ = fundef
-                .args
-                .into_iter()
-                .fold(env.clone(), |acc, (name, ty)| {
-                    HashTrieMap::insert(&acc, name, ty)
-                });
-            let (t2, c2) = g(fundef.body.clone(), &env_)?;
-            let c = concat_com(c1, c2).push_front((TyVar(ty), TyFun(vars, Box::new(t2.clone()))));
+            let env_ = fundef.args.iter().fold(env.clone(), |acc, (name, ty)| {
+                HashTrieMap::insert(&acc, name.clone(), ty.clone())
+            });
+            let (t2, c2) = g(&fundef.body, &env_)?;
+            let c = concat_com(c1, c2)
+                .push_front((TyVar(ty.clone()), TyFun(vars, Box::new(t2.clone()))));
             Ok((t1, c))
         }
         EApp(f, args) => {
@@ -245,7 +243,7 @@ pub fn f(
     env: &HashTrieMap<String, usize>,
 ) -> Result<HashMap<usize, Type>, TypingError> {
     let mut unifier = HashMap::new();
-    let (_, constrains) = g(expr, &env)?;
+    let (_, constrains) = g(&expr, &env)?;
     unify(constrains, &mut unifier)?;
     Ok(unifier)
 }
