@@ -126,7 +126,6 @@ fn g(
         EConst(Const::CBool(_)) => no_constraints!(Type::TyBool),
         EConst(Const::CUnit) => no_constraints!(Type::TyUnit),
         EVar(v) => {
-            println!("{}", v);
             let x = env.get(v);
             match x {
                 Some(y) => no_constraints!(Type::TyVar(y.clone())),
@@ -169,7 +168,7 @@ fn g(
                 let c = concat_com(c1, concat_com(c2, c3))
                     .push_front((t1, TyArray(Box::new(t3.clone()))))
                     .push_front((t2, TyInt));
-                Ok((t3, c))
+                Ok((TyUnit, c))
             }
             _ => unreachable!(),
         },
