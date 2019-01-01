@@ -18,7 +18,7 @@ fn occurence_check(ty: &Type, v: &usize) -> Result<(), TypingError> {
         TyVar(u) if *u == *v => Err(TypingError::OccurenceCheckError(*u)),
         TyArray(u) => occurence_check(&u, v),
         TyFun(args, ret) => {
-            occurence_check(&ret, v);
+            occurence_check(&ret, v)?;
             args.iter().try_for_each(|x| occurence_check(x, v))
         }
         TyTuple(args) => args.iter().try_for_each(|x| occurence_check(x, v)),
@@ -58,7 +58,7 @@ fn unify(
         (TyFloat, TyFloat) => unify(rest, unifier),
         (TyVar(x), TyVar(y)) if x == y => unify(rest, unifier),
         (TyVar(x), rhs) => {
-            occurence_check(&rhs, &x);
+            occurence_check(&rhs, &x)?;
             // restの全てのxの出現をrhsに置き換える
 
             let rhs_cls = rhs.clone();
@@ -234,7 +234,6 @@ fn g(
             let cs = cs.push_front((t1, TyFun(ts, Box::new(alpha.clone()))));
             Ok((alpha, cs))
         }
-        _ => unreachable!(),
     }
 }
 pub fn f(

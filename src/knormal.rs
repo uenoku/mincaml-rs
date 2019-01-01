@@ -1,6 +1,6 @@
 use crate::syntax;
 use crate::syntax::Expr::*;
-use crate::syntax::{genvar, Cmp, Const, Expr, Op};
+use crate::syntax::{genvar, infer_function_ret, Cmp, Const, Expr, Op};
 use crate::ty;
 use crate::ty::Type;
 use rpds::HashTrieMap;
@@ -18,7 +18,12 @@ pub enum Var {
 }
 
 #[derive(Debug, Clone)]
-pub struct Fundef {}
+pub struct Fundef {
+    pub name: (String, usize),
+    pub args: Vec<(String, usize)>,
+    pub body: BE,
+}
+
 #[derive(Debug, Clone)]
 pub enum KExpr {
     KVar(Var), // KConstant はKVarにマージ
@@ -32,12 +37,12 @@ pub enum KExpr {
 }
 
 fn knormalize_sub(
-    expr: Box<&Expr>,
+    expr: Box<Expr>,
     env: &HashTrieMap<String, usize>,
     tyenv: &mut HashMap<usize, Type>,
 ) -> (Vec<(String, usize, Box<KExpr>)>, Var) {
     let mut cls = vec![];
-    let (k, t) = g(*expr, env, tyenv);
+    let (k, t) = g(&expr, env, tyenv);
     let name = match *k {
         KExpr::KVar(v) => v,
         _ => {
@@ -107,18 +112,13 @@ fn g(
                     Op::Array => {
                         // Array(number of elements, init)
                         infer_var(&args[1], tyenv)
-                        // let (a,b) = &args[1];
-                        // tyenv.get(b).unwrap().clone()
                     }
                     Op::Store => {
                         // Store(dest array, index, src)
                         infer_var(&args[2], tyenv)
-                        // let (a, b) = &args[2];
-                        // tyenv.get(b).unwrap().clone()
                     }
                     Op::Load => {
                         // Load(src array, index)
-                        //                        let (a, b) = &args[0];
                         let a = infer_var(&args[0], tyenv);
                         ty::get_element(a)
                     }
@@ -139,9 +139,8 @@ fn g(
                     ty,
                 )
             }
-            _ => {
-                let (v, args) = vec_knormalize(vec![e1.clone()], env, tyenv);
-                let l = args[0].clone();
+            other => {
+                let (v, l) = knormalize_sub(Box::new(other), env, tyenv);
                 let r = Var::Constant(Const::CBool(true));
                 let (k2, ty) = g(&e2, env, tyenv);
                 let (k3, _) = g(&e3, env, tyenv);
@@ -160,13 +159,55 @@ fn g(
                 t2,
             )
         }
-        // ,
-        // EApp(f,args) => {
-        //     let (mut v1,kargs) = vec_knormalize(args,env,tyenv);
-        //     let x = knormalize_sub(f,env,tyenv);
-        //     v1.push(v2);
-        // }
-        _ => unreachable!(),
+        EApp(f, args) => {
+            let (mut v1, kargs) = vec_knormalize(args.to_vec(), env, tyenv);
+            let (x, f) = knormalize_sub(f.clone(), env, tyenv);
+            x.into_iter().for_each(|x| v1.push(x));
+            (
+                vec_to_expr(Box::new(KExpr::KApp(f.clone(), kargs)), v1),
+                infer_function_ret(&infer_var(&f, tyenv)),
+            )
+        }
+        ELetRec(fundef, e) => {
+            let (name, ty) = &fundef.name;
+            let env = env.insert(name.clone(), ty.clone());
+            let (x, f) = g(&e, &env, tyenv);
+            let env_ = fundef.args.iter().fold(env.clone(), |acc, (name, ty)| {
+                HashTrieMap::insert(&acc, name.clone(), ty.clone())
+            });
+            let (body, _) = g(&fundef.body, &env_, tyenv);
+            (
+                Box::new(KExpr::KLetRec(
+                    Fundef {
+                        name: fundef.name.clone(),
+                        body: body,
+                        args: fundef.args.clone(),
+                    },
+                    x,
+                )),
+                f,
+            )
+        }
+        ETuple(elements) => {
+            let (v1, kelements) = vec_knormalize(elements.to_vec(), env, tyenv);
+            let ty = kelements
+                .to_vec()
+                .iter()
+                .map(|x| infer_var(x, tyenv))
+                .collect();
+            (
+                vec_to_expr(Box::new(KExpr::KTuple(kelements.to_vec())), v1),
+                Type::TyTuple(ty),
+            )
+        }
+        ELetTuple(binds, e1, e2) => {
+            let (k1, t1) = g(&e1, env, tyenv);
+            let env_ = binds.iter().fold(env.clone(), |acc, (name, ty)| {
+                HashTrieMap::insert(&acc, name.clone(), ty.clone())
+            });
+            let (k2, t2) = g(&e2, &env_, tyenv);
+            (Box::new(KExpr::KLetTuple(binds.to_vec(), k1, k2)), t2)
+        }
     }
 }
 pub fn f(

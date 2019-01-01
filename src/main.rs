@@ -161,7 +161,7 @@ fn builtin() -> HashTrieMap<String, usize> {
     env
 }
 fn main() {
-    std::env::set_var("RUST_LOG", "debug");
+    std::env::set_var("RUST_LOG", "info");
     env_logger::init();
     let args: Vec<String> = env::args().collect();
     let opts = parse(args).unwrap();
@@ -176,5 +176,5 @@ fn main() {
     let mut tyenv = typing::f(p.clone(), &env).unwrap();
     info!("type check pass");
     let p = knormal::f(p, &env, &mut tyenv);
-    debug!("{:?}", p);
+    info!("knormalized");
 }

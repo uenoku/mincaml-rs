@@ -94,7 +94,12 @@ pub fn genname() -> String {
 pub fn newvar() -> Var {
     getvar(genname())
 }
-
+pub fn infer_function_ret(x: &Type) -> Type {
+    match x.clone() {
+        TyFun(_, ret) => *ret,
+        _ => unreachable!(),
+    }
+}
 pub fn infer_const(x: &Const) -> Type {
     match *x {
         Const::CInt(_) => Type::TyInt,
