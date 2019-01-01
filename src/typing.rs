@@ -3,7 +3,6 @@ use crate::syntax::{genvar, Const, Expr, Op, Var};
 use crate::ty;
 use crate::ty::Type;
 use crate::ty::Type::*;
-
 use crate::util::{concat, concat_com, destruct, from_vec, map};
 use rpds::{HashTrieMap, List};
 use std::collections::HashMap;
@@ -65,9 +64,7 @@ fn unify(
             let rhs_cls = rhs.clone();
             let c = map(
                 rest.clone(),
-                Box::new(move |(l, r)| {
-                    (subst(&l, &x, &rhs_cls), subst(&r, &x, &rhs_cls))
-                }),
+                Box::new(move |(l, r)| (subst(&l, &x, &rhs_cls), subst(&r, &x, &rhs_cls))),
             );
             // unifierの全てのxの出現をrhsに置き換える
             unifier
@@ -146,12 +143,7 @@ fn g(
             (Op::FSub, [e1, e2]) => bin!(e1, e2, TyFloat, TyFloat),
             (Op::FMul, [e1, e2]) => bin!(e1, e2, TyFloat, TyFloat),
             (Op::FDiv, [e1, e2]) => bin!(e1, e2, TyFloat, TyFloat),
-            (Op::EQ, [e1, e2]) => bin!(e1, e2, TyVar(genvar()), TyBool),
-            (Op::NE, [e1, e2]) => bin!(e1, e2, TyVar(genvar()), TyBool),
-            (Op::LE, [e1, e2]) => bin!(e1, e2, TyVar(genvar()), TyBool),
-            (Op::LT, [e1, e2]) => bin!(e1, e2, TyVar(genvar()), TyBool),
-            (Op::GE, [e1, e2]) => bin!(e1, e2, TyVar(genvar()), TyBool),
-            (Op::GT, [e1, e2]) => bin!(e1, e2, TyVar(genvar()), TyBool),
+            (Op::Cond(_), [e1, e2]) => bin!(e1, e2, TyVar(genvar()), TyBool),
             (Op::Not, [e1]) => uni!(e1, TyBool, TyBool),
             (Op::Neg, [e1]) => uni!(e1, TyInt, TyInt),
             (Op::FNeg, [e1]) => uni!(e1, TyFloat, TyFloat),
@@ -248,29 +240,11 @@ fn g(
         _ => unreachable!(),
     }
 }
-pub fn f(expr: Box<Expr>) -> Result<HashMap<usize, Type>, TypingError> {
-    let global_hardcode = vec![
-        "floor",
-        "not",
-        "int_of_float",
-        "print_char",
-        "print_int",
-        "read_int",
-        "read_float",
-        "reduction",
-        "kernel_cos",
-        "kernel_sin",
-        "kernel_atan",
-        "create_array",
-        "float_of_int",
-        "sqrt",
-    ];
+pub fn f(
+    expr: Box<Expr>,
+    env: &HashTrieMap<String, usize>,
+) -> Result<HashMap<usize, Type>, TypingError> {
     let mut unifier = HashMap::new();
-    let env = global_hardcode
-        .into_iter()
-        .fold(HashTrieMap::new(), |acc, i| {
-            HashTrieMap::insert(&acc, i.to_string(), genvar())
-        });
     let (_, constrains) = g(expr, &env)?;
     unify(constrains, &mut unifier)?;
     Ok(unifier)

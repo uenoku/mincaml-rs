@@ -2,6 +2,11 @@
 #[macro_use]
 extern crate lalrpop_util;
 extern crate getopts;
+#[macro_use]
+extern crate failure;
+#[macro_use]
+extern crate log;
+extern crate env_logger;
 mod arg_parse;
 mod knormal;
 mod syntax;
@@ -10,6 +15,10 @@ mod typing;
 mod util;
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 use self::arg_parse::parse;
+use crate::syntax::genvar;
+use failure::Error;
+use rpds::HashTrieMap;
+use std;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -17,14 +26,14 @@ fn type_failed(x: &str) {
     println!("{:?}", x);
     println!("{:?}", parser::ExprParser::new().parse(&x));
     let p = parser::ExprParser::new().parse(&x).unwrap();
-    let p = typing::f(p);
+    let p = typing::f(p, &HashTrieMap::new());
     assert!(p.is_err());
 }
 fn type_check(x: &str) {
     println!("{:?}", x);
     println!("{:?}", parser::ExprParser::new().parse(&x));
     let p = parser::ExprParser::new().parse(&x).unwrap();
-    let p = typing::f(p);
+    let p = typing::f(p, &HashTrieMap::new());
     assert!(p.is_ok());
 }
 
@@ -127,15 +136,45 @@ fn test_minrt() {
 fn test_type() {
     type_check("let a = Array.make 2 2 in a.(0) <- if true then 1 else 3 ; a");
 }
-
+fn builtin() -> HashTrieMap<String, usize> {
+    let global_hardcode = vec![
+        "floor",
+        "not",
+        "int_of_float",
+        "print_char",
+        "print_int",
+        "read_int",
+        "read_float",
+        "reduction",
+        "kernel_cos",
+        "kernel_sin",
+        "kernel_atan",
+        "create_array",
+        "float_of_int",
+        "sqrt",
+    ];
+    let env = global_hardcode
+        .into_iter()
+        .fold(HashTrieMap::new(), |acc, i| {
+            HashTrieMap::insert(&acc, i.to_string(), genvar())
+        });
+    env
+}
 fn main() {
+    std::env::set_var("RUST_LOG", "debug");
+    env_logger::init();
     let args: Vec<String> = env::args().collect();
     let opts = parse(args).unwrap();
-    let mut file = File::open(opts.filename).unwrap();
+    let mut file = File::open(&opts.filename).unwrap();
+    info!("input file = {}", opts.filename);
     let mut contents = String::new();
     file.read_to_string(&mut contents);
     let p = parser::ExprParser::new().parse(contents.as_str()).unwrap();
-    println!("{:?}", p);
-    let p = typing::f(p);
-    println!("{:?}", p);
+    info!("parse succeed");
+    debug!("{:?}", p);
+    let env = builtin();
+    let mut tyenv = typing::f(p.clone(), &env).unwrap();
+    info!("type check pass");
+    let p = knormal::f(p, &env, &mut tyenv);
+    debug!("{:?}", p);
 }

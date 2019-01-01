@@ -1,74 +1,54 @@
 use std::str::FromStr;
 
-use crate::syntax::{Op,Const,Expr,getvar,newvar,genvar,Var,Fundef,genname,Cmp};
+use crate::syntax::{Op,Const,Expr,getvar,newvar,genvar,Var,Fundef,genname};
 
 grammar;
-// # operator priority (descending order)
-// : atom
-// : array get
-// : function application (left assoc)
-// : - -. (prefix)
-// : * / *. /. (left assoc)
-// : + - +. - (left assoc)
-// : = < (left assoc?)
-// : <- (left assoc)
-// : if 
-// : ; (right assoc)
-// : let , let rec
-
-
-pub Expr = Seq;
 
 Tier<Ops,NextTier>: Box<Expr> = {
     <e1:Tier<Ops,NextTier>> <op:Ops> <e2:NextTier> => Box::new(Expr::EOp(op, vec![e1,e2])),
     NextTier
 };
 
-
-Expr1 : Box<Expr> = {
-   <e1:Expr1> "." "(" <e2:Expr> ")" => Box::new(Expr::EOp(Op::Load, vec![e1,e2])),
-   Expr0,
-};
-Expr2 : Box<Expr> = {
-    ArrayCreate <args:Actual_Args> => Box::new(Expr::EOp(Op::Array,args)),
-    <e:SimpleExpr> <args:Actual_Args> => Box::new(Expr::EApp(e,args)),
-    Expr1,
-};
-PrefixMinus: Op = {
-    "-" => Op::Neg,
-    "-." => Op::FNeg,
+pub Expr = Expr4;
+//// Semicolon  とりあえず;が来たら切るようにする.
+// "let f = 1;2 in f"とかはうまく動かないようにする.
+// こっちのほうが健全では？？
+Expr5: Box<Expr> = {
+    <e1:Expr4> ";" <e2:Expr> =>  Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
+    <e1:Expr4> ";" => e1,
+    Expr4,
 };
 
-Expr3 : Box<Expr> = {
-    <op:PrefixMinus> <e:Expr3>  =>  Box::new(Expr::EOp(op, vec![e])),
-    Expr2,
+//// 結合順序怪しいなあ
+//Expr7:Box<Expr> = {
+//    <e1:Expr6> <op:CondOp> <e2:Expr7> => Box::new(Expr::EOp(op, vec![e1,e2])),
+//    Expr6
+//};
+//Expr6:Box<Expr> = {
+//    <e1:Expr5> <op:TermOp> <e2:Expr6> => Box::new(Expr::EOp(op, vec![e1,e2])),
+//    Expr5
+//};
+//Expr5:Box<Expr> = {
+//    <e1:Expr4> <op:FactorOp> <e2:Expr5> => Box::new(Expr::EOp(op, vec![e1,e2])),
+//    Expr4
+//};
+Expr4 : Box<Expr> = {
+    "if" <e1:Expr> "then" <e2:Expr> "else" <e3:Expr> => 
+    Box::new(Expr::EIf(e1,e2,e3)),
+    "let" <e1:Id> "=" <e2:Expr> "in" <e3:Expr4> => Box::new(Expr::ELet((e1,genvar()),e2,e3)),
+    "let" "(" <e1:Pat> ")" "=" <e2:Expr> "in" <e3:Expr4> => Box::new(Expr::ELetTuple(e1,e2,e3)),
+    "let" "rec" <f:Fun> "in" <cont:Expr4> => Box::new(Expr::ELetRec(f,cont)),
+    //<e1:Expr4> ";" <e2:Expr31> =>  Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
+    //<e1:Expr31> ";" => e1,
+    <e1:SimpleExpr> "." "(" <e2:Expr> ")" "<-" <e3:Expr4> => Box::new(Expr::EOp(Op::Store, vec![e1,e2,e3])),
+    Expr31,
+}; 
+
+Expr31:Box<Expr> = {
+    Expr3,
 };
 
 
-Expr4 = Tier<FactorOp, Expr3>;
-Expr5 = Tier<TermOp, Expr4>; 
-Expr6 = Tier<CondOp, Expr5>; 
-
-Expr7: Box<Expr> = {
-    <e1:Expr1> "." "(" <e2:Expr> ")" "<-" <e3:Expr8> => Box::new(Expr::EOp(Op::Store, vec![e1,e2,e3])),
-    Expr6,
-};
-Expr8: Box<Expr> = {
-    "if" <e1:Seq> "then" <e2:Seq> "else"  <e3:Expr8> => Box::new(Expr::EIf(e1,e2,e3)),
-    Expr7,
-}
-
-Seq: Box<Expr> = {
-    Expr10 ,
-    <e1:Expr8> ";" <e2:Seq> => Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
-}
-
-Expr10: Box<Expr> = {
-    "let" <e1:Id> "=" <e2:Seq> "in" <e3:Seq> => Box::new(Expr::ELet((e1,genvar()),e2,e3)),
-    "let" "(" <e1:Pat> ")" "=" <e2:Seq> "in" <e3:Seq> => Box::new(Expr::ELetTuple(e1,e2,e3)),
-    "let" "rec" <f:Fun> "in" <cont:Seq> => Box::new(Expr::ELetRec(f,cont)),
-    Expr8,
-}
 Elems: Vec<Box<Expr>> = {
     <e1:Elems> "," <e2:Expr> => {
         let mut v_ = e1;
@@ -87,7 +67,7 @@ Pat: Vec<(Var,usize)> = {
 };
 
 Fun : Fundef = {
-    <n:Id> <args:Formal_Args> "=" <body:Seq> => 
+    <n:Id> <args:Formal_Args> "=" <body:Expr> => 
         Fundef {
             name: (n,genvar()),
             args: args,
@@ -95,12 +75,12 @@ Fun : Fundef = {
         },
 };
 Actual_Args: Vec<Box<Expr>> = {
-    <a:Actual_Args> <e:Expr1> => {
+    <a:Actual_Args> <e:SimpleExpr> => {
         let mut v_ = a;
         v_.push(e);
         v_
     },
-    Expr1 => vec![<>],
+    SimpleExpr => vec![<>],
 };
 Formal_Args : Vec<(Var,usize)> = {
     <a:Id_args> <v:Formal_Args> => 
@@ -117,12 +97,12 @@ ArrayCreate: () = {
     "create_array" => (),
 };
 CondOp : Op = {
-    "<=" => Op::Cond(Cmp::LE),
-    "<" => Op::Cond(Cmp::LT),
-    ">=" => Op::Cond(Cmp::GE),
-    ">" => Op::Cond(Cmp::GT),
-    "=" => Op::Cond(Cmp::EQ),
-    "<>" => Op::Cond(Cmp::NE),
+    "<=" => Op::LE,
+    "<" => Op::LT,
+    ">=" => Op::GE,
+    ">" => Op::GT,
+    "=" => Op::EQ,
+    "<>" => Op::NE,
 };
 
 TermOp : Op = {
@@ -138,6 +118,16 @@ FactorOp : Op = {
     "/" => Op::Div,
 };
 
+Expr3 = Tier<CondOp, Expr2>; 
+Expr2 = Tier<TermOp, Expr1>; 
+Expr1 = Tier<FactorOp, Expr11>;
+// App 
+Expr11: Box<Expr> = {
+    ArrayCreate <args:Actual_Args> => Box::new(Expr::EOp(Op::Array,args)),
+    <e:SimpleExpr> <args:Actual_Args> => Box::new(Expr::EApp(e,args)),
+    Expr0,
+};
+Exp
 Expr0 = SimpleExpr;
 
 pub SimpleExpr: Box<Expr> = {
@@ -148,7 +138,9 @@ pub SimpleExpr: Box<Expr> = {
     Bool => Box::new(Expr::EConst(Const::CBool(<>))),
     Id => Box::new(Expr::EVar(<>)),
     "(" <e1:Elems> ")" => Box::new(Expr::ETuple(e1)),
+   <e1:SimpleExpr> "." "(" <e2:Expr> ")" => Box::new(Expr::EOp(Op::Load, vec![e1,e2])),
 };
+
 
 pub Int: i32 = r"-?[0-9]+" => i32::from_str(<>).unwrap();
 pub Float: f32 = {
@@ -165,7 +157,7 @@ pub Id_args: Var = {
 };
 pub Id: Var = {
     r"[a-z]([0-9]|[a-z]|[A-Z]|_)*" => {
-        debug!("found variable {}",<>);
+        println!("{}",<>);
         getvar(String::from(<>))
     },
     "_" => genname(),

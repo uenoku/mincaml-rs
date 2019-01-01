@@ -1,6 +1,6 @@
 use crate::syntax;
 use crate::syntax::Expr::*;
-use crate::syntax::{Const, Expr, Op};
+use crate::syntax::{genvar, Cmp, Const, Expr, Op};
 use crate::ty;
 use crate::ty::Type;
 use rpds::HashTrieMap;
@@ -12,18 +12,8 @@ use std::collections::HashMap;
 type BE = Box<KExpr>;
 
 #[derive(Debug, Clone)]
-pub enum Cmp {
-    EQ,
-    NE,
-    LT,
-    GT,
-    LE,
-    GE,
-}
-
-#[derive(Debug, Clone)]
 pub enum Var {
-    OpVar(String),
+    OpVar(String, usize),
     Constant(Const),
 }
 
@@ -37,8 +27,28 @@ pub enum KExpr {
     KLet((String, usize), BE, BE),
     KLetTuple(Vec<(String, usize)>, BE, BE),
     KLetRec(Fundef, BE),
-    KApp(BE, Vec<Var>),
+    KApp(Var, Vec<Var>),
     KTuple(Vec<Var>),
+}
+
+fn knormalize_sub(
+    expr: Box<Expr>,
+    env: &HashTrieMap<String, usize>,
+    tyenv: &mut HashMap<usize, Type>,
+) -> (Vec<(String, usize, Box<KExpr>)>, Var) {
+    let mut cls = vec![];
+    let (k, t) = g(*expr, env, tyenv);
+    let name = match *k {
+        KExpr::KVar(v) => v,
+        _ => {
+            let name = syntax::genname();
+            let ty = syntax::genvar();
+            tyenv.insert(ty, t);
+            cls.push((name.clone(), ty, k));
+            Var::OpVar(name, ty)
+        }
+    };
+    (cls, name)
 }
 fn vec_knormalize(
     args: Vec<Box<Expr>>,
@@ -54,7 +64,7 @@ fn vec_knormalize(
             _ => {
                 let name = syntax::genname();
                 let ty = syntax::genvar();
-                ans.push(Var::OpVar(name.clone()));
+                ans.push(Var::OpVar(name.clone(), ty));
                 tyenv.insert(ty, ti);
                 cls.push((name, ty, ki));
             }
@@ -67,6 +77,12 @@ fn vec_to_expr(expr: Box<KExpr>, args: Vec<(String, usize, Box<KExpr>)>) -> Box<
         Box::new(KExpr::KLet((name, ty), expr, acc))
     })
 }
+fn infer_var(v: &Var, tyenv: &mut HashMap<usize, Type>) -> Type {
+    match v {
+        Var::Constant(c) => syntax::infer_const(c),
+        Var::OpVar(_, d) => tyenv.get(&d).unwrap().clone(),
+    }
+}
 fn g(
     e: Expr,
     env: &HashTrieMap<String, usize>,
@@ -75,32 +91,83 @@ fn g(
     match e {
         EConst(c) => (
             Box::new(KExpr::KVar(Var::Constant(c.clone()))),
-            syntax::infer_const(c),
+            syntax::infer_const(&c),
+        ),
+        EVar(d) => (
+            Box::new(KExpr::KVar(Var::OpVar(
+                d.clone(),
+                env.get(&d).unwrap().clone(),
+            ))),
+            tyenv.get(env.get(&d).unwrap()).unwrap().clone(),
         ),
         EOp(op, args) => {
             let (cls, args) = vec_knormalize(args, env, tyenv);
             let ty = {
                 match op {
                     Op::Array => {
-                        let (a, b, c) = &cls[1];
-                        tyenv.get(b).unwrap().clone()
+                        // Array(number of elements, init)
+                        infer_var(&args[1], tyenv)
+                        // let (a,b) = &args[1];
+                        // tyenv.get(b).unwrap().clone()
                     }
                     Op::Store => {
-                        let (a, b, c) = &cls[2];
-                        tyenv.get(b).unwrap().clone()
+                        // Store(dest array, index, src)
+                        infer_var(&args[2], tyenv)
+                        // let (a, b) = &args[2];
+                        // tyenv.get(b).unwrap().clone()
                     }
                     Op::Load => {
-                        let (a, b, c) = &cls[0];
-                        ty::get_element(tyenv.get(&b).unwrap().clone())
+                        // Load(src array, index)
+//                        let (a, b) = &args[0];
+                        let a = infer_var(&args[0], tyenv);
+                        ty::get_element(a)
                     }
                     _ => syntax::infer_op(&op),
                 }
             };
             (vec_to_expr(Box::new(KExpr::KOp(op, args)), cls), ty)
         }
+        EIf(e1, e2, e3) => match *e1 {
+            EOp(Op::Cond(x), args) => {
+                let (v, args) = vec_knormalize(args, env, tyenv);
+                let l = args[0].clone();
+                let r = args[1].clone();
+                let (k2, ty) = g(*e2, env, tyenv);
+                let (k3, _) = g(*e3, env, tyenv);
+                (vec_to_expr(Box::new(KExpr::KIf(x, l, r, k2, k3)), v), ty)
+            }
+            _ => {
+                let (v, args) = vec_knormalize(vec![e1], env, tyenv);
+                let l = args[0].clone();
+                let r = Var::Constant(Const::CBool(true));
+                let (k2, ty) = g(*e2, env, tyenv);
+                let (k3, _) = g(*e3, env, tyenv);
+                (
+                    vec_to_expr(Box::new(KExpr::KIf(Cmp::EQ, l, r, k2, k3)), v),
+                    ty,
+                )
+            }
+        },
+        ELet((name, ty), e1, e2) => {
+            let (k1, t1) = g(*e1, env, tyenv);
+            let env = env.insert(name.clone(), ty);
+            let (k2, t2) = g(*e2, &env, tyenv);
+            (Box::new(KExpr::KLet((name, ty), k1, k2)), t2)
+        }
+        ,
+        EApp(f,args) => {
+            let (mut v1,kargs) = vec_knormalize(args,env,tyenv);
+            let x = knormalize_sub(f,env,tyenv);
+            v1.push(v2);
+        }
         _ => unreachable!(),
     }
 }
-pub fn f(expr: Box<Expr>, tyenv: &mut HashMap<usize, Type>) -> KExpr {
-    KExpr::KVar(Var::OpVar("u".to_string()))
+pub fn f(
+    expr: Box<Expr>,
+    env: &HashTrieMap<String, usize>,
+    tyenv: &mut HashMap<usize, Type>,
+) -> Box<KExpr> {
+    let (e, ty) = g(*expr, env, tyenv);
+    e
 }
