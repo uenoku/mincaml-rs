@@ -8,6 +8,7 @@ extern crate failure;
 extern crate log;
 extern crate env_logger;
 mod arg_parse;
+mod closure;
 mod knormal;
 mod syntax;
 mod ty;
@@ -170,11 +171,14 @@ fn main() {
     let mut contents = String::new();
     file.read_to_string(&mut contents);
     let p = parser::ExprParser::new().parse(contents.as_str()).unwrap();
-    info!("parse succeed");
+    info!("parse end");
     debug!("{:?}", p);
     let env = builtin();
     let mut tyenv = typing::f(p.clone(), &env).unwrap();
-    info!("type check pass");
+    info!("type check end");
     let p = knormal::f(p, &env, &mut tyenv);
-    info!("knormalized");
+    info!("knormaliz end");
+    let p = closure::f(*p, &env, &mut tyenv);
+    info!("closure coversion end");
+    debug!("{:?}", p);
 }

@@ -16,6 +16,12 @@ pub enum Var {
     OpVar(String, usize),
     Constant(Const),
 }
+pub fn get_var(x: &Var) -> String {
+    match x {
+        Var::OpVar(y, _) => y.clone(),
+        _ => unreachable!(),
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Fundef {
