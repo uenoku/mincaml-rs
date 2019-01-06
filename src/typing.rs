@@ -125,6 +125,7 @@ fn g(
         EConst(Const::CFloat(_)) => no_constraints!(Type::TyFloat),
         EConst(Const::CBool(_)) => no_constraints!(Type::TyBool),
         EConst(Const::CUnit) => no_constraints!(Type::TyUnit),
+        EExt(u) => no_constraints!(Type::TyVar(env.get(u).unwrap().clone())),
         EVar(v) => {
             let x = env.get(v);
             match x {

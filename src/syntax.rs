@@ -51,7 +51,6 @@ pub enum Const {
     CFloat(f32),
     CBool(bool),
     CUnit,
-    // CExtArray(String),
 }
 pub type Var = String;
 pub fn getvar(name: String) -> Var {
@@ -78,6 +77,7 @@ pub enum Expr {
     ELetRec(Fundef, BE),
     EApp(BE, Vec<BE>),
     ETuple(Vec<BE>),
+    EExt(String),
 }
 static mut COUNTER: usize = 0;
 pub fn genvar() -> usize {

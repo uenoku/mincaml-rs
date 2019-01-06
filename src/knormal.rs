@@ -15,10 +15,12 @@ type BE = Box<KExpr>;
 pub enum Var {
     OpVar(String, usize),
     Constant(Const),
+    Ext(String, usize),
 }
 pub fn get_var(x: &Var) -> String {
     match x {
         Var::OpVar(y, _) => y.clone(),
+        Var::Ext(y, _) => y.clone(),
         _ => unreachable!(),
     }
 }
@@ -92,6 +94,7 @@ fn infer_var(v: &Var, tyenv: &mut HashMap<usize, Type>) -> Type {
     match v {
         Var::Constant(c) => syntax::infer_const(c),
         Var::OpVar(_, d) => tyenv.get(&d).unwrap().clone(),
+        Var::Ext(_, d) => tyenv.get(&d).unwrap().clone(),
     }
 }
 fn g(
@@ -103,6 +106,13 @@ fn g(
         EConst(c) => (
             Box::new(KExpr::KVar(Var::Constant(c.clone()))),
             syntax::infer_const(&c),
+        ),
+        EExt(d) => (
+            Box::new(KExpr::KVar(Var::Ext(
+                d.clone(),
+                env.get(&d.to_string()).unwrap().clone(),
+            ))),
+            tyenv.get(env.get(&d.to_string()).unwrap()).unwrap().clone(),
         ),
         EVar(d) => (
             Box::new(KExpr::KVar(Var::OpVar(

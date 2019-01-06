@@ -7,9 +7,11 @@ extern crate failure;
 #[macro_use]
 extern crate log;
 extern crate env_logger;
+mod alpha;
 mod arg_parse;
 mod closure;
 mod knormal;
+mod replaceExt;
 mod syntax;
 mod ty;
 mod typing;
@@ -137,7 +139,7 @@ fn test_minrt() {
 fn test_type() {
     type_check("let a = Array.make 2 2 in a.(0) <- if true then 1 else 3 ; a");
 }
-fn builtin() -> HashTrieMap<String, usize> {
+fn builtin(init: HashTrieMap<String, usize>) -> HashTrieMap<String, usize> {
     let global_hardcode = vec![
         "floor",
         "not",
@@ -154,11 +156,9 @@ fn builtin() -> HashTrieMap<String, usize> {
         "float_of_int",
         "sqrt",
     ];
-    let env = global_hardcode
-        .into_iter()
-        .fold(HashTrieMap::new(), |acc, i| {
-            HashTrieMap::insert(&acc, i.to_string(), genvar())
-        });
+    let env = global_hardcode.into_iter().fold(init, |acc, i| {
+        HashTrieMap::insert(&acc, i.to_string(), genvar())
+    });
     env
 }
 fn main() {
@@ -173,12 +173,14 @@ fn main() {
     let p = parser::ExprParser::new().parse(contents.as_str()).unwrap();
     info!("parse end");
     debug!("{:?}", p);
-    let env = builtin();
-    let mut tyenv = typing::f(p.clone(), &env).unwrap();
+    let (p, external) = replaceExt::f(*p);
+    let env = builtin(external);
+    let mut tyenv = typing::f(Box::new(p.clone()), &env).unwrap();
     info!("type check end");
-    let p = knormal::f(p, &env, &mut tyenv);
+    let p = knormal::f(Box::new(p), &env, &mut tyenv);
     info!("knormaliz end");
-    let p = closure::f(*p, &env, &mut tyenv);
+    let p = alpha::f(p);
+    let p = closure::f(p, &env, &mut tyenv);
     info!("closure coversion end");
     debug!("{:?}", p);
 }

@@ -132,10 +132,10 @@ fn g(
             (CExpr::CLetTuple(binds, e1, e2), concat(t1, t2))
         }
         KTuple(elements) => (CExpr::CTuple(elements), List::new()),
-        KApp(f, args) if known.contains(&knormal::get_var(&f)) => {
-            (CExpr::CAppDir(knormal::get_var(&f), args), List::new())
+        KApp(Var::OpVar(f, _), args) if !known.contains(&f) => {
+            (CExpr::CAppCls(f, args), List::new())
         }
-        KApp(f, args) => (CExpr::CAppCls(knormal::get_var(&f), args), List::new()),
+        KApp(f, args) => (CExpr::CAppDir(knormal::get_var(&f), args), List::new()),
         KLetRec(fundef, e) => {
             let (name, ty) = &fundef.name;
             let env = env.insert(name.clone(), ty.clone());
