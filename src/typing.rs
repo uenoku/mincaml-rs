@@ -105,7 +105,7 @@ fn g(
     macro_rules! bin {
         ($e1:expr,$e2:expr,$src:expr,$dst:expr) => {{
             let t1 = g(&$e1, env, constraints)?;
-            let t2 = g(&$e1, env, constraints)?;
+            let t2 = g(&$e2, env, constraints)?;
             constraints.push((t1, $src));
             constraints.push((t2, $src));
             Ok($dst)
