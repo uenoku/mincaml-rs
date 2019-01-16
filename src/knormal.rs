@@ -4,18 +4,29 @@ use crate::syntax::{genvar, infer_function_ret, Cmp, Const, Expr, Op};
 use crate::ty;
 use crate::ty::Type;
 use rpds::HashTrieMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 /*
  * Constantな値に対してはletで束縛せずにkNormalにしてみる
  * これによってForの定数探しとかだいぶ楽になるんやない？
  */
 type BE = Box<KExpr>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum Var {
     OpVar(String, usize),
     Constant(Const),
     Ext(String, usize),
+}
+impl Var {
+    pub fn set(&self) -> HashSet<String> {
+        let mut ret = HashSet::new();
+        match self {
+            Var::OpVar(y, _) => ret.insert(y.clone()),
+            Var::Ext(y, _) => ret.insert(y.clone()),
+            _ => false,
+        };
+        ret
+    }
 }
 pub fn get_var(x: &Var) -> String {
     match x {
