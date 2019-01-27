@@ -27,7 +27,7 @@ pub enum CExpr {
     COp(Op, Vec<Var>),
     CIf(Cmp, Var, Var, BE, BE),
     CLet((String, usize), BE, BE),
-    CLetTuple(Vec<(String, usize)>, BE, BE),
+    CLetTuple(Vec<(String, usize)>, Var, BE),
     CTuple(Vec<Var>),
     CMakeCls((String, usize), Closure, BE),
     CAppCls(String, Vec<Var>),
@@ -74,12 +74,12 @@ pub fn fv(e: &CExpr) -> HashSet<String> {
             f1.union(&f2).cloned().collect()
         }
         CExpr::CLetTuple(binds, e1, e2) => {
-            let f1 = fv(&e1);
             let mut f2 = fv(&e2);
             binds.iter().for_each(|x| {
                 f2.remove(&x.0);
             });
-            f1.union(&f2).cloned().collect()
+            f2
+            //f1.union(&f2).cloned().collect()
         }
         CExpr::CTuple(elements) => of_vec!(elements),
         CExpr::CAppDir(f, args) => of_vec!(args),
@@ -124,12 +124,12 @@ fn g(
             (CExpr::CLet((name, ty), e1, e2), concat(t1, t2))
         }
         KLetTuple(binds, e1, e2) => {
-            let (e1, t1) = sub!(e1, env);
+            //let (e1, t1) = sub!(e1, env);
             let env_ = binds.iter().fold(env.clone(), |acc, (name, ty)| {
                 HashTrieMap::insert(&acc, name.clone(), ty.clone())
             });
             let (e2, t2) = sub!(e2, &env_);
-            (CExpr::CLetTuple(binds, e1, e2), concat(t1, t2))
+            (CExpr::CLetTuple(binds, e1, e2), t2)
         }
         KTuple(elements) => (CExpr::CTuple(elements), List::new()),
         KApp(Var::OpVar(f, _), args) if !known.contains(&f) => {

@@ -55,7 +55,7 @@ pub fn alpha(e: KExpr, env: &HashTrieMap<String, String>) -> KExpr {
         ),
         KExpr::KTuple(args) => KExpr::KTuple(args.into_iter().map(|x| alpha_var(x, env)).collect()),
         KExpr::KLetTuple(binds, e1, e2) => {
-            let k1 = sub!(e1, env);
+            //let k1 = sub!(e1, env);
             let env_ = binds.iter().fold(env.clone(), |acc, (name, ty)| {
                 let newname = newname!(name);
                 HashTrieMap::insert(&acc, name.clone(), newname.clone())
@@ -65,7 +65,7 @@ pub fn alpha(e: KExpr, env: &HashTrieMap<String, String>) -> KExpr {
                 .map(|(x, ty)| (env_.get(&x).unwrap().clone(), ty))
                 .collect();
             let k2 = sub!(e2, &env_);
-            (KExpr::KLetTuple(binds, k1, k2))
+            (KExpr::KLetTuple(binds, alpha_var(e1, &env_), k2))
         }
         KExpr::KLetRec(fundef, e) => {
             let (name, ty) = &fundef.name;

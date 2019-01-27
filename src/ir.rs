@@ -185,19 +185,44 @@ pub fn g(
 ) {
     let e = match e {
         CExpr::COp(opcode, operand) => {
+            macro_rules! binrr {
+                ($op:expr) => {
+                    Inst::BinaryRR {
+                        dst: dst.unwrap(),
+                        opcode: $op,
+                        lhs: operand[0].clone(),
+                        rhs: operand[1].clone(),
+                    }
+                };
+            }
             let inst = match opcode {
-                syntax::Op::Add => Inst::BinaryRR {
-                    dst: dst.unwrap(),
-                    opcode: OpBinaryRR::Add,
-                    lhs: operand[0].clone(),
-                    rhs: operand[1].clone(),
-                },
+                syntax::Op::Add => binrr!(OpBinaryRR::Add),
+                syntax::Op::Sub => binrr!(OpBinaryRR::Sub),
+                syntax::Op::FAdd => binrr!(OpBinaryRR::FAdd),
+                syntax::Op::FSub => binrr!(OpBinaryRR::FSub),
+                syntax::Op::FMul => binrr!(OpBinaryRR::FMul),
+                syntax::Op::FDiv => binrr!(OpBinaryRR::FDiv),
+                syntax::Op::Cond(u) => binrr!(OpBinaryRR::Cond(u)),
+                syntax::Op::Array => binrr!(OpBinaryRR::Array),
                 _ => unreachable!(),
             };
             block.push_back(inst);
         }
         CExpr::CLet((x, y), u, v) => {
             g(*u, label, block, blocks, Some((x, y)));
+            g(*v, label, block, blocks, dst);
+        }
+        CExpr::CLetTuple(binds, u, v) => {
+            let mut i = 0;
+            for (x, y) in binds {
+                let inst = Inst::Load {
+                    dst: (x, y),
+                    ptr: u.clone(),
+                    idx: knormal::Var::Constant(syntax::Const::CInt(i)),
+                };
+                i += 1;
+                block.push_back(inst);
+            }
             g(*v, label, block, blocks, dst);
         }
         CExpr::CAppDir(label, args) => block.push_back(Inst::CallDir { dst, label, args }),

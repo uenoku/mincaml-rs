@@ -49,7 +49,7 @@ pub enum KExpr {
     KOp(Op, Vec<Var>),
     KIf(Cmp, Var, Var, BE, BE),
     KLet((String, usize), BE, BE),
-    KLetTuple(Vec<(String, usize)>, BE, BE),
+    KLetTuple(Vec<(String, usize)>, Var, BE),
     KLetRec(Fundef, BE),
     KApp(Var, Vec<Var>),
     KTuple(Vec<Var>),
@@ -229,11 +229,21 @@ fn g(
         }
         ELetTuple(binds, e1, e2) => {
             let (k1, t1) = g(&e1, env, tyenv);
+            let name = syntax::genname();
             let env_ = binds.iter().fold(env.clone(), |acc, (name, ty)| {
                 HashTrieMap::insert(&acc, name.clone(), ty.clone())
             });
+            let ty = genvar();
+            let env_ = env_.insert(name.clone(), ty);
             let (k2, t2) = g(&e2, &env_, tyenv);
-            (Box::new(KExpr::KLetTuple(binds.to_vec(), k1, k2)), t2)
+            (
+                Box::new(KExpr::KLet(
+                    (name.clone(), ty),
+                    k1,
+                    Box::new(KExpr::KLetTuple(binds.to_vec(), Var::OpVar(name, ty), k2)),
+                )),
+                t2,
+            )
         }
     }
 }

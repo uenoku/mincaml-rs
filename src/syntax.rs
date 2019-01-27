@@ -45,7 +45,7 @@ pub fn infer_op(op: &Op) -> Type {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum Const {
     CInt(i32),
     CFloat(f32),
