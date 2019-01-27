@@ -80,25 +80,7 @@ Seq: Box<Expr> = {
     <e1:Seq_sub> ";"  <e2:Expr10> => Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
     Expr10,
 }
-////Expr8_Seq:Box<Expr> = {
-////    <e1:Expr8> ";" <e2:Expr8_Seq> => Box::new(Expr::ELet((genname(),genvar()),e1,e2)),
-////    Expr8,
-////};
-////Expr10_2: Box<Expr> = {
-////    <e1:Id> "=" <e2:Expr10> "in" <e3:Expr10> => Box::new(Expr::ELet((e1,genvar()),e2,e3)),
-////    "(" <e1:Pat> ")" "=" <e2:Expr10> "in" <e3:Expr10> => Box::new(Expr::ELetTuple(e1,e2,e3)),
-////    "rec" <f:Fun> "in" <cont:Expr10> => Box::new(Expr::ELetRec(f,cont)),
-////};
-//////
-//Expr10_3: Box<Expr> = {
-//    "let" <e1:Id> "=" <e2:Seq> "in" <e3:Expr10_3> => Box::new(Expr::ELet((e1,genvar()),e2,e3)),
-//    "let" "(" <e1:Pat> ")" "=" <e2:Seq> "in" <e3:Expr10_3> => Box::new(Expr::ELetTuple(e1,e2,e3)),
-//    "let" "rec" <f:Fun> "in" <cont:Expr10_3> => Box::new(Expr::ELetRec(f,cont)),
-//    "if" <e1:Seq> "then" <e2:Seq> "else" <e3:Expr10_3>  => Box::new(Expr::EIf(e1,e2,e3)),
-//}
-//Expr10 : Box<Expr> = {
-//    Expr10_3
-//}
+
 Expr10_2: Box<Expr> = {
     <e1:Id> "=" <e2:Seq> "in" <e3:Seq> => Box::new(Expr::ELet((e1,genvar()),e2,e3)),
     "(" <e1:Pat> ")" "=" <e2:Seq> "in" <e3:Seq> => Box::new(Expr::ELetTuple(e1,e2,e3)),
