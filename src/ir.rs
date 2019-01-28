@@ -2,9 +2,9 @@ use crate::closure;
 use crate::closure::CExpr;
 use crate::knormal;
 use crate::syntax;
+use crate::ty;
 
-use std::collections::HashSet;
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 type Set<T> = HashSet<T>;
 
@@ -19,7 +19,7 @@ pub enum ControlFlow {
 #[derive(Debug, Clone)]
 pub struct Phi {
     args: Vec<(Var, Label)>,
-    dst: (String, usize),
+    dst: Name,
 }
 type Var = knormal::Var;
 
@@ -28,6 +28,8 @@ pub enum OpBinaryRR {
     // register,register
     Add,
     Sub,
+    Mul,
+    Div,
     FDiv,
     FMul,
     FSub,
@@ -91,16 +93,13 @@ pub enum Inst {
         label: String,
         args: Vec<Var>,
     },
-    Phi {
-        dst: Name,
-        args: Vec<(Var, Label)>,
-    },
+    Phi(Phi),
 }
 
 impl Inst {
     fn dest(&self) -> Option<Name> {
         match self.clone() {
-            Inst::Phi { dst, args } => Some(dst),
+            Inst::Phi(Phi { dst, args }) => Some(dst),
             Inst::CallCls { dst, label, args } => dst,
             Inst::CallDir { dst, label, args } => dst,
             Inst::Load { dst, ptr, idx } => Some(dst),
@@ -122,7 +121,7 @@ impl Inst {
     }
     fn operand(&self) -> Vec<Var> {
         match self.clone() {
-            Inst::Phi { dst, args } => args.iter().map(|(x, y)| x).cloned().collect(),
+            Inst::Phi(Phi { dst, args }) => args.iter().map(|(x, y)| x).cloned().collect(),
             Inst::CallCls { dst, label, args } => args,
             Inst::CallDir { dst, label, args } => args,
             Inst::Load { dst, ptr, idx } => vec![ptr],
@@ -176,11 +175,33 @@ pub struct Fundef {
 }
 impl Block {}
 
+pub fn cls_to_ir(f:closure::Fundef, tyenv:&mut HashMap<usize,ty::Type>){
+    let e = f.body;
+    let mut label = String::from("entry");
+    let (name,ty) = f.name;
+    let ty = 
+        match *tyenv.get(&ty).unwrap() {
+            ty::Type::TyFun(x,y) => 
+            match *y {
+                ty::Type::TyUnit => None,
+                _ => 
+                Some(*y.clone()),
+            },
+            _ => unreachable!(),
+        };
+    let name = syntax::genname();
+    let mut blocks = Vec::new();
+    g(*e, tyenv, &mut label, &mut VecDeque::new(), &mut blocks, &mut Vec::new(), dst);
+}
+pub fn f( functions: Vec<closure::Fundef>){
+}
 pub fn g(
     e: closure::CExpr,
+    tyenv: &mut HashMap<usize, ty::Type>,
     label: &mut String,
     block: &mut VecDeque<Inst>,
     blocks: &mut Vec<Block>,
+    phis: &mut Vec<Phi>,
     dst: Option<(String, usize)>,
 ) {
     let e = match e {
@@ -195,37 +216,156 @@ pub fn g(
                     }
                 };
             }
+            macro_rules! binri {
+                ($op:expr) => {
+                    Inst::BinaryRR {
+                        dst: dst.unwrap(),
+                        opcode: $op,
+                        lhs: operand[0].clone(),
+                        rhs: operand[1].getimm().unwrap(),
+                    }
+                };
+            }
+            macro_rules! uni {
+                ($op:expr) => {
+                    Inst::Unary {
+                        dst: dst.unwrap(),
+                        opcode: $op,
+                        src: operand[0].clone(),
+                    }
+                };
+            }
             let inst = match opcode {
                 syntax::Op::Add => binrr!(OpBinaryRR::Add),
                 syntax::Op::Sub => binrr!(OpBinaryRR::Sub),
+                syntax::Op::Mul => binrr!(OpBinaryRR::Mul),
+                syntax::Op::Div => binrr!(OpBinaryRR::Div),
                 syntax::Op::FAdd => binrr!(OpBinaryRR::FAdd),
                 syntax::Op::FSub => binrr!(OpBinaryRR::FSub),
                 syntax::Op::FMul => binrr!(OpBinaryRR::FMul),
                 syntax::Op::FDiv => binrr!(OpBinaryRR::FDiv),
                 syntax::Op::Cond(u) => binrr!(OpBinaryRR::Cond(u)),
                 syntax::Op::Array => binrr!(OpBinaryRR::Array),
-                _ => unreachable!(),
+                syntax::Op::FNeg => uni!(OpUnary::FNeg),
+                syntax::Op::Neg => uni!(OpUnary::Neg),
+                syntax::Op::Not => uni!(OpUnary::Not),
+                syntax::Op::Load => Inst::Load {
+                    dst: dst.unwrap(),
+                    ptr: operand[0].clone(),
+                    idx: operand[1].clone(),
+                },
+                syntax::Op::Store => Inst::Store {
+                    ptr: operand[0].clone(),
+                    idx: operand[1].clone(),
+                    src: operand[2].clone(),
+                },
             };
             block.push_back(inst);
         }
         CExpr::CLet((x, y), u, v) => {
-            g(*u, label, block, blocks, Some((x, y)));
-            g(*v, label, block, blocks, dst);
+            g(*u, tyenv, label, block, blocks, phis, Some((x, y)));
+            g(*v, tyenv, label, block, blocks, phis, dst);
+        }
+        CExpr::CIf(cond, x, y, t, f) => {
+            let ty = syntax::genvar();
+            tyenv.insert(ty, ty::Type::TyBool);
+            let name = (syntax::genname(), ty);
+            let b = Inst::BinaryRR {
+                opcode: OpBinaryRR::Cond(cond),
+                dst: name.clone(),
+                lhs: x,
+                rhs: y,
+            };
+            block.push_back(b);
+            let mut t_label = label.clone();
+            t_label.push_str(".true");
+            let mut f_label = label.clone();
+            f_label.push_str(".false");
+            let mut cont_label = label.clone();
+            cont_label.push_str(".cont");
+            blocks.push(Block {
+                label: label.clone(),
+                inst: block.clone(),
+                last: ControlFlow::Branch(Var::OpVar(name), t_label.clone(), f_label.clone()),
+                phis: phis.clone(),
+            });
+            macro_rules! sub {
+                ($label:expr,$e:expr, $dst:expr) => {{
+                    block.clear();
+                    phis.clear();
+                    label.clone_from(&$label);
+                    g(*$e, tyenv, label, block, blocks, phis, $dst);
+                    blocks.push(Block {
+                        label: label.clone(),
+                        inst: block.clone(),
+                        last: ControlFlow::Jump(cont_label.clone()),
+                        phis: phis.clone(),
+                    });
+                }};
+            }
+            if dst.is_none() {
+                // phiは生えない
+                sub!(t_label, t, None);
+                sub!(f_label, f, None);
+                block.clear();
+                phis.clear();
+                label.clone_from(&cont_label);
+            } else {
+                let (name, ty) = dst.unwrap();
+                let tv = syntax::genname();
+                let fv = syntax::genname();
+                sub!(t_label, t, Some((tv.clone(), ty)));
+                sub!(f_label, f, Some((fv.clone(), ty)));
+                block.clear();
+                phis.clear();
+                label.clone_from(&cont_label);
+                let phi = Phi {
+                    dst: (name, ty),
+                    args: vec![
+                        (knormal::Var::OpVar(tv, ty), t_label),
+                        (knormal::Var::OpVar(fv, ty), f_label),
+                    ],
+                };
+                phis.push(phi.clone());
+                block.push_back(Inst::Phi(phi));
+            }
+        }
+
+        CExpr::CTuple(elements) => {
+            let ty = syntax::genvar();
+            tyenv.insert(ty, ty::Type::TyPtr);
+            let mut i = 0;
+            let n = syntax::genname();
+            let ptr = (n.clone(), ty);
+            block.push_back(Inst::CallDir {
+                dst: Some(ptr),
+                label: String::from("create_tuple"),
+                args: vec![knormal::Var::Constant(syntax::Const::CInt(
+                    elements.len() as i32
+                ))],
+            });
+            for (i, x) in elements.into_iter().enumerate() {
+                block.push_back(Inst::Store {
+                    src: x,
+                    idx: knormal::Var::Constant(syntax::Const::CInt(i as i32)),
+                    ptr: knormal::Var::OpVar(n.clone(), ty),
+                });
+            }
         }
         CExpr::CLetTuple(binds, u, v) => {
-            let mut i = 0;
-            for (x, y) in binds {
+            for (i, (x, y)) in binds.into_iter().enumerate() {
                 let inst = Inst::Load {
                     dst: (x, y),
                     ptr: u.clone(),
-                    idx: knormal::Var::Constant(syntax::Const::CInt(i)),
+                    idx: knormal::Var::Constant(syntax::Const::CInt(i as i32)),
                 };
-                i += 1;
                 block.push_back(inst);
             }
-            g(*v, label, block, blocks, dst);
+            g(*v, tyenv, label, block, blocks, phis, dst);
         }
         CExpr::CAppDir(label, args) => block.push_back(Inst::CallDir { dst, label, args }),
-        _ => unreachable!(),
+        CExpr::CVar(_) => unimplemented!(),
+        CExpr::CAppCls(_, _) => unimplemented!(),
+        CExpr::CMakeCls(_, _, _) => unimplemented!(),
     };
 }

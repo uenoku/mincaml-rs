@@ -27,6 +27,15 @@ impl Var {
         };
         ret
     }
+    pub fn OpVar((x,ty): (String,usize)) -> Var {
+        Var::OpVar(x, ty)
+    }
+    pub fn getimm(&self) -> Option<usize> {
+        match self {
+            Var::Constant(Const::CInt(x)) => Some(*x as usize),
+            _ => Option::None,
+        }
+    }
 }
 pub fn get_var(x: &Var) -> String {
     match x {

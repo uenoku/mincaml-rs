@@ -141,28 +141,6 @@ fn test_minrt() {
 fn test_type() {
     type_check("let a = Array.make 2 2 in a.(0) <- if true then 1 else 3 ; a");
 }
-fn builtin(init: HashTrieMap<String, usize>) -> HashTrieMap<String, usize> {
-    // let global_hardcode = vec![
-    //    "floor",
-    //     "not",
-    //     "int_of_float",
-    //     "print_char",
-    //     "print_int",
-    //     "read_int",
-    //     "read_float",
-    //     "reduction",
-    //     "kernel_cos",
-    //     "kernel_sin",
-    //     "kernel_atan",
-    //     "create_array",
-    //     "float_of_int",
-    //     "sqrt",
-    // ];
-    // let env = global_hardcode.into_iter().fold(init, |acc, i| {
-    //     HashTrieMap::insert(&acc, i.to_string(), genvar())
-    // });
-    init
-}
 fn main() {
     std::env::set_var("RUST_LOG", "info");
     env_logger::init();
@@ -176,7 +154,7 @@ fn main() {
     info!("parse end");
     debug!("{:?}", p);
     let (p, external) = replace_ext::f(*p);
-    let env = builtin(external);
+    let env = external;
     let mut tyenv = typing::f(Box::new(p.clone()), &env).unwrap();
     info!("type check end");
     let p = knormal::f(Box::new(p), &env, &mut tyenv);

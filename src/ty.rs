@@ -5,6 +5,7 @@ pub enum Type {
     TyBool,
     TyInt,
     TyFloat,
+    TyPtr,
     TyFun(Vec<Type>, Box<Type>),
     TyTuple(Vec<Type>),
     TyArray(Box<Type>),
