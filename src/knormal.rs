@@ -27,7 +27,7 @@ impl Var {
         };
         ret
     }
-    pub fn OpVar((x,ty): (String,usize)) -> Var {
+    pub fn OpVar((x, ty): (String, usize)) -> Var {
         Var::OpVar(x, ty)
     }
     pub fn getimm(&self) -> Option<usize> {

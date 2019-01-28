@@ -1,7 +1,9 @@
 use crate::knormal;
 use crate::knormal::KExpr::*;
 use crate::knormal::Var;
+use crate::syntax;
 use crate::syntax::{genvar, infer_function_ret, Cmp, Const, Expr, Op};
+use crate::ty;
 use crate::ty::Type;
 use crate::util::concat;
 use rpds::{HashTrieMap, HashTrieSet, List};
@@ -196,9 +198,22 @@ pub fn f(
     e: knormal::KExpr,
     env: &HashTrieMap<String, usize>,
     tyenv: &mut HashMap<usize, Type>,
-) -> (CExpr, List<Fundef>) {
+) -> Vec<Fundef> {
     let known: HashTrieSet<String> = env
         .iter()
         .fold(HashTrieSet::new(), |acc, (x, y)| acc.insert(x.clone()));
-    g(e, env, tyenv, &known)
+    let (expr, functions) = g(e, env, tyenv, &known);
+    let mut vec: Vec<_> = functions.into_iter().cloned().collect();
+    let unit = syntax::genvar();
+    let fun = syntax::genvar();
+    tyenv.insert(unit, ty::Type::TyUnit);
+    tyenv.insert(fun, ty::unitfun());
+    let main = Fundef {
+        name: (String::from("main"), fun),
+        args: vec![(syntax::genname(), unit)],
+        body: Box::new(expr),
+        formal_fv: vec![],
+    };
+    vec.push(main);
+    vec
 }

@@ -11,7 +11,9 @@ pub enum Type {
     TyArray(Box<Type>),
     TyVar(usize),
 }
-
+pub fn unitfun() -> Type {
+    Type::TyFun(vec![Type::TyUnit], Box::new(Type::TyUnit))
+}
 pub fn alpha() -> Type {
     Type::TyVar(syntax::genvar())
 }

@@ -78,6 +78,10 @@ pub enum Inst {
         idx: Var,
         src: Var,
     },
+    Mv {
+        src: Var,
+        dst: Name,
+    },
     Load {
         dst: Name,
         ptr: Var,
@@ -104,6 +108,7 @@ impl Inst {
             Inst::CallDir { dst, label, args } => dst,
             Inst::Load { dst, ptr, idx } => Some(dst),
             Inst::Unary { opcode, dst, src } => Some(dst),
+            Inst::Mv { dst, src } => Some(dst),
             Inst::BinaryRI {
                 opcode,
                 dst,
@@ -127,6 +132,7 @@ impl Inst {
             Inst::Load { dst, ptr, idx } => vec![ptr],
             Inst::Store { ptr, idx, src } => vec![ptr, src],
             Inst::Unary { opcode, dst, src } => vec![src],
+            Inst::Mv { dst, src } => vec![src],
             Inst::BinaryRI {
                 opcode,
                 dst,
@@ -166,6 +172,7 @@ pub struct Block {
     pub last: ControlFlow,
     pub phis: Vec<Phi>,
 }
+#[derive(Clone, Debug)]
 pub struct Fundef {
     pub name: (String, usize),
     pub args: Vec<(String, usize)>,
@@ -175,25 +182,79 @@ pub struct Fundef {
 }
 impl Block {}
 
-pub fn cls_to_ir(f:closure::Fundef, tyenv:&mut HashMap<usize,ty::Type>){
+pub fn cls_to_ir(f: closure::Fundef, tyenv: &mut HashMap<usize, ty::Type>) -> Fundef {
     let e = f.body;
     let mut label = String::from("entry");
-    let (name,ty) = f.name;
-    let ty = 
-        match *tyenv.get(&ty).unwrap() {
-            ty::Type::TyFun(x,y) => 
-            match *y {
-                ty::Type::TyUnit => None,
-                _ => 
-                Some(*y.clone()),
-            },
-            _ => unreachable!(),
-        };
-    let name = syntax::genname();
+    let (name, ty) = f.name.clone();
+    let ty = match tyenv.get(&ty).unwrap() {
+        ty::Type::TyFun(x, y) => match **y {
+            ty::Type::TyUnit => None,
+            _ => Some(*y.clone()),
+        },
+        _ => unreachable!(),
+    };
+
     let mut blocks = Vec::new();
-    g(*e, tyenv, &mut label, &mut VecDeque::new(), &mut blocks, &mut Vec::new(), dst);
+    let mut inst = VecDeque::new();
+    let mut phis = Vec::new();
+    match ty {
+        Some(x) => {
+            let n = syntax::genname();
+            let ty = syntax::genvar();
+            tyenv.insert(ty, x);
+            let ret = (n, ty);
+            g(
+                *e,
+                tyenv,
+                &mut label,
+                &mut VecDeque::new(),
+                &mut blocks,
+                &mut Vec::new(),
+                Some(ret.clone()),
+            );
+            blocks.push(Block {
+                label: label,
+                inst: inst,
+                last: ControlFlow::Return(Some(Var::OpVar(ret))),
+                phis: phis,
+            });
+            Fundef {
+                name: f.name,
+                args: f.args,
+                formal_fv: f.formal_fv,
+                entry: String::from("entry"),
+                blocks: blocks,
+            }
+        }
+        None => {
+            g(
+                *e,
+                tyenv,
+                &mut label,
+                &mut inst,
+                &mut blocks,
+                &mut phis,
+                None,
+            );
+            blocks.push(Block {
+                label: label,
+                inst: inst,
+                last: ControlFlow::Return(None),
+                phis: phis,
+            });
+            Fundef {
+                name: f.name,
+                args: f.args,
+                formal_fv: f.formal_fv,
+                entry: String::from("entry"),
+                blocks: blocks,
+            }
+        }
+    }
 }
-pub fn f( functions: Vec<closure::Fundef>){
+pub fn f(functions: Vec<closure::Fundef>, tyenv: &mut HashMap<usize, ty::Type>) -> Vec<Fundef> {
+    let res: Vec<_> = functions.into_iter().map(|x| cls_to_ir(x, tyenv)).collect();
+    res
 }
 pub fn g(
     e: closure::CExpr,
@@ -364,7 +425,14 @@ pub fn g(
             g(*v, tyenv, label, block, blocks, phis, dst);
         }
         CExpr::CAppDir(label, args) => block.push_back(Inst::CallDir { dst, label, args }),
-        CExpr::CVar(_) => unimplemented!(),
+        CExpr::CVar(y) => {
+            if dst.is_some() {
+                block.push_back(Inst::Mv {
+                    src: y,
+                    dst: dst.unwrap(),
+                })
+            }
+        }
         CExpr::CAppCls(_, _) => unimplemented!(),
         CExpr::CMakeCls(_, _, _) => unimplemented!(),
     };

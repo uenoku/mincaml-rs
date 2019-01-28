@@ -162,5 +162,6 @@ fn main() {
     let p = alpha::f(p);
     let p = closure::f(p, &env, &mut tyenv);
     info!("closure coversion end");
-    debug!("{:?}", p);
+    let p = ir::f(p, &mut tyenv);
+    println!("{:?}", p);
 }
