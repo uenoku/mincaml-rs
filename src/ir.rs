@@ -186,6 +186,7 @@ pub fn cls_to_ir(f: closure::Fundef, tyenv: &mut HashMap<usize, ty::Type>) -> Fu
     let e = f.body;
     let mut label = String::from("entry");
     let (name, ty) = f.name.clone();
+    info!("{} {:?}", name, tyenv.get(&ty).unwrap());
     let ty = match tyenv.get(&ty).unwrap() {
         ty::Type::TyFun(x, y) => match **y {
             ty::Type::TyUnit => None,
@@ -207,9 +208,9 @@ pub fn cls_to_ir(f: closure::Fundef, tyenv: &mut HashMap<usize, ty::Type>) -> Fu
                 *e,
                 tyenv,
                 &mut label,
-                &mut VecDeque::new(),
+                &mut inst,
                 &mut blocks,
-                &mut Vec::new(),
+                &mut phis,
                 Some(ret.clone()),
             );
             blocks.push(Block {

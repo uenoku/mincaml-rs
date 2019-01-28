@@ -4,6 +4,8 @@
 extern crate lalrpop_util;
 extern crate getopts;
 #[macro_use]
+extern crate inkwell;
+#[macro_use]
 extern crate failure;
 #[macro_use]
 extern crate log;
@@ -13,6 +15,7 @@ mod arg_parse;
 mod closure;
 mod ir;
 mod knormal;
+mod llvmcodegen;
 mod replace_ext;
 mod syntax;
 mod ty;

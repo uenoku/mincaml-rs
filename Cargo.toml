@@ -13,6 +13,8 @@ rpds = "0.5.0"
 log = "0.4"
 env_logger = "0.6"
 failure="0.1.4"
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm7-0" }
+
 
 [build-dependencies]
 lalrpop = "0.16.2"
