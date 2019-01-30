@@ -27,6 +27,7 @@ use crate::syntax::genvar;
 use failure::Error;
 use rpds::HashTrieMap;
 use std;
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -167,4 +168,5 @@ fn main() {
     info!("closure coversion end");
     let p = ir::f(p, &mut tyenv);
     println!("{:?}", p);
+    llvmcodegen::f(p, tyenv, HashMap::new(), opts.filename);
 }

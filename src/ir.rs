@@ -52,7 +52,7 @@ pub enum OpUnary {
     Not,
     FNeg,
 }
-type Name = (String, usize);
+pub type Name = (String, usize);
 
 #[derive(Debug, Clone)]
 pub enum Inst {
