@@ -13,6 +13,7 @@ use inkwell::passes::PassManager;
 use inkwell::types::BasicType;
 use inkwell::types::BasicTypeEnum;
 use inkwell::types::PointerType;
+use inkwell::values::BasicValue;
 use inkwell::values::{
     BasicValueEnum, FloatValue, FunctionValue, GenericValue, IntValue, PointerValue,
 };
@@ -51,9 +52,7 @@ pub struct LlvmEmitter<'a> {
     pub builder: &'a Builder,
     pub fpm: &'a PassManager,
     pub module: &'a Module,
-    ivariables: HashMap<String, IntValue>,
-    fvariables: HashMap<String, FloatValue>,
-    bvariables: HashMap<String, IntValue>,
+    variables: HashMap<String, BasicValueEnum>,
 
     tyenv: HashMap<usize, ty::Type>,
     extenv: HashMap<usize, usize>,
@@ -69,8 +68,9 @@ impl<'a> LlvmEmitter<'a> {
             Some(x) => x,
             None => {
                 let args = self.get_type_by_name(name).get_args();
+                println!("{} {:?}", name.0, self.get_type_by_name(name));
                 let ftype = match self.get_type_by_name(name).get_ret() {
-                    Type::TyUnit => {
+                    Type::TyUnit | Type::TyVar(_) => {
                         let ret = self.context.void_type();
                         let argsty = types_to_llvmtypes(&args, self);
                         ret.fn_type(&argsty, false)
@@ -105,8 +105,8 @@ impl<'a> knormal::Var {
     pub fn build_bool(&self, emitter: &mut LlvmEmitter<'a>) -> Result<IntValue, LlvmError> {
         match self {
             knormal::Var::OpVar(x, ty) | knormal::Var::Ext(x, ty) => {
-                match emitter.bvariables.get(x) {
-                    Some(x) => Ok(*x),
+                match emitter.variables.get(x) {
+                    Some(x) => Ok(x.into_int_value()),
                     None => Err(LlvmError::UnboundedVariable(x.clone())),
                 }
             }
@@ -120,8 +120,8 @@ impl<'a> knormal::Var {
     pub fn build_i32(&self, emitter: &mut LlvmEmitter<'a>) -> Result<IntValue, LlvmError> {
         match self {
             knormal::Var::OpVar(x, ty) | knormal::Var::Ext(x, ty) => {
-                match emitter.ivariables.get(x) {
-                    Some(x) => Ok(*x),
+                match emitter.variables.get(x) {
+                    Some(x) => Ok(x.into_int_value()),
                     None => Err(LlvmError::UnboundedVariable(x.clone())),
                 }
             }
@@ -135,8 +135,8 @@ impl<'a> knormal::Var {
         info!("{:?}", self);
         match self {
             knormal::Var::OpVar(x, ty) | knormal::Var::Ext(x, ty) => {
-                match emitter.fvariables.get(x) {
-                    Some(x) => Ok(*x),
+                match emitter.variables.get(x) {
+                    Some(x) => Ok(x.into_float_value()),
                     None => Err(LlvmError::UnboundedVariable(x.clone())),
                 }
             }
@@ -197,7 +197,7 @@ impl<'a> ir::Inst {
                             rhs.build_i32(emitter)?,
                             dst.0.as_str(),
                         );
-                        emitter.ivariables.insert(dst.0.clone(), tmp);
+                        emitter.variables.insert(dst.0.clone(), tmp.into());
                         Ok(())
                     }};
                 }
@@ -208,7 +208,7 @@ impl<'a> ir::Inst {
                             rhs.build_f32(emitter)?,
                             dst.0.as_str(),
                         );
-                        emitter.fvariables.insert(dst.0.clone(), tmp);
+                        emitter.variables.insert(dst.0.clone(), tmp.into());
                         Ok(())
                     }};
                 }
@@ -227,7 +227,7 @@ impl<'a> ir::Inst {
                                 rhs.build_f32(emitter)?,
                                 dst.0.as_str(),
                             );
-                            emitter.bvariables.insert(dst.0.clone(), tmp);
+                            emitter.variables.insert(dst.0.clone(), tmp.into());
                             Ok(())
                         }
                         _ => {
@@ -237,14 +237,14 @@ impl<'a> ir::Inst {
                                 rhs.build_i32(emitter)?,
                                 dst.0.as_str(),
                             );
-                            emitter.bvariables.insert(dst.0.clone(), tmp);
+                            emitter.variables.insert(dst.0.clone(), tmp.into());
                             Ok(())
                         }
                     },
                     _ => Err(LlvmError::NotImpl),
                 }
             }
-            ir::Inst::CallDir { dst, label, args } => {
+            ir::Inst::CallDir { dst, label, args } | ir::Inst::CallCls { dst, label, args } => {
                 let call = emitter
                     .builder
                     .build_call(
@@ -258,23 +258,8 @@ impl<'a> ir::Inst {
                     .try_as_basic_value();
                 match dst {
                     Some(x) => {
-                        let tmp: BasicValueEnum = call.left().unwrap();
-                        match emitter.get_type_by_name(&x) {
-                            Type::TyFloat => emitter
-                                .fvariables
-                                .insert(x.0.clone(), tmp.into_float_value()),
-                            Type::TyBool => emitter
-                                .bvariables
-                                .insert(x.0.clone(), tmp.into_float_value()),
-                            Type::TyInt => {
-                                emitter.ivariables.insert(x.0.clone(), tmp.into_int_value())
-                            }
-                            _ => emitter.ivariables.insert(
-                                x.0.clone(),
-                                tmp.into_pointer_value()
-                                    .const_to_int(emitter.context.i32_type()),
-                            ),
-                        };
+                        let tmp = call.left().unwrap();
+                        emitter.variables.insert(x.0.clone(), tmp);
                     }
                     None => (),
                 };
@@ -286,27 +271,50 @@ impl<'a> ir::Inst {
                         let tmp = emitter
                             .builder
                             .build_int_neg(src.build_i32(emitter)?, dst.0.as_str());
-                        emitter.ivariables.insert(dst.0.clone(), tmp);
+                        emitter.variables.insert(dst.0.clone(), tmp.into());
                     }
                     ir::OpUnary::Not => {
                         let tmp = emitter
                             .builder
                             .build_not(src.build_bool(emitter)?, dst.0.as_str());
-                        emitter.bvariables.insert(dst.0.clone(), tmp);
+                        emitter.variables.insert(dst.0.clone(), tmp.into());
                     }
                     ir::OpUnary::FNeg => {
                         let tmp = emitter
                             .builder
                             .build_float_neg(src.build_f32(emitter)?, dst.0.as_str());
-                        emitter.fvariables.insert(dst.0.clone(), tmp);
+                        emitter.variables.insert(dst.0.clone(), tmp.into());
                     }
                 };
                 Ok(())
             }
             ir::Inst::Store { ptr, idx, src } => Ok(()),
-            ir::Inst::Mv { src, dst } => Ok(()),
+            // ir::Inst::Mv { src, dst } => {
+            // },
             ir::Inst::Load { dst, ptr, idx } => Ok(()),
-            ir::Inst::Phi(ir::Phi { dst, args }) => Ok(()),
+            ir::Inst::Phi(ir::Phi { dst, args }) => {
+                let phi = emitter.builder.build_phi(
+                    emitter.get_type_by_name(dst).to_llvm_type(emitter),
+                    dst.0.as_str(),
+                );
+
+                match emitter.get_type_by_name(dst) {
+                    Type::TyInt | Type::TyBool => {
+                        for (v, label) in args {
+                            phi.add_incoming(&[(
+                                &v.build_i32(emitter).unwrap(),
+                                emitter.blockenv.get(label).unwrap(),
+                            )]);
+                        }
+                    }
+                    _ => {
+                        ()
+                        // let tmp : Vec<_>  = args.into_iter().map(|(x,y)| (&x.build_ptr(emitter).unwrap(),y)).collect();
+                        // phi.add_incoming(tmp)
+                    }
+                }
+                Ok(())
+            }
             _ => unimplemented!(),
         }
     }
@@ -471,6 +479,11 @@ impl<'a> ir::Fundef {
 
     pub fn compile(&self, emitter: &mut LlvmEmitter<'a>) -> Result<(), LlvmError> {
         let f = emitter.get_function(&self.name);
+
+        for (i, arg) in f.get_param_iter().enumerate() {
+            let arg_name = self.args[i].0.clone();
+            emitter.variables.insert(arg_name, arg);
+        }
         emitter.fn_value_opt = Some(f);
         self.blocks.iter().try_for_each(|x| x.add_bb(emitter));
         self.blocks.iter().try_for_each(|x| x.build(emitter))
@@ -494,9 +507,7 @@ pub fn f(
         fpm: &fpm,
         module: &module,
         fn_value_opt: None,
-        ivariables: HashMap::new(),
-        fvariables: HashMap::new(),
-        bvariables: HashMap::new(),
+        variables: HashMap::new(),
         tyenv: tyenv,
         extenv: extenv,
         blockenv: HashMap::new(),

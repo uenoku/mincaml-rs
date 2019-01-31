@@ -18,6 +18,12 @@ pub enum Var {
     Ext(String, usize),
 }
 impl Var {
+    pub fn alpha(self, alias: &HashMap<String, Var>) -> Self {
+        match self {
+            Var::OpVar(x, y) if alias.contains_key(&x) => alias.get(&x).unwrap().clone(),
+            _ => self,
+        }
+    }
     pub fn set(&self) -> HashSet<String> {
         let mut ret = HashSet::new();
         match self {

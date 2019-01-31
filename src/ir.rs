@@ -21,6 +21,18 @@ pub struct Phi {
     pub args: Vec<(Var, Label)>,
     pub dst: Name,
 }
+impl Phi {
+    fn alpha(self, alias: &HashMap<String, knormal::Var>) -> Self {
+        Phi {
+            dst: self.dst,
+            args: self
+                .args
+                .into_iter()
+                .map(|(x, y)| (x.alpha(alias), y))
+                .collect(),
+        }
+    }
+}
 type Var = knormal::Var;
 
 #[derive(Debug, Clone)]
@@ -78,10 +90,10 @@ pub enum Inst {
         idx: Var,
         src: Var,
     },
-    Mv {
-        src: Var,
-        dst: Name,
-    },
+    // Mv {
+    //     src: Var,
+    //     dst: Name,
+    // },
     Load {
         dst: Name,
         ptr: Var,
@@ -101,6 +113,58 @@ pub enum Inst {
 }
 
 impl Inst {
+    fn alpha(self, alias: &HashMap<String, knormal::Var>) -> Self {
+        match self {
+            Inst::Phi(x) => Inst::Phi(x.alpha(alias)),
+            Inst::CallCls { dst, label, args } => Inst::CallCls {
+                dst,
+                label,
+                args: args.into_iter().map(|x| x.alpha(alias)).collect(),
+            },
+            Inst::CallDir { dst, label, args } => Inst::CallCls {
+                dst,
+                label,
+                args: args.into_iter().map(|x| x.alpha(alias)).collect(),
+            },
+            Inst::Load { dst, ptr, idx } => Inst::Load {
+                dst,
+                ptr: ptr.alpha(alias),
+                idx: idx.alpha(alias),
+            },
+            Inst::Store { ptr, idx, src } => Inst::Store {
+                ptr: ptr.alpha(alias),
+                idx: idx.alpha(alias),
+                src: src.alpha(alias),
+            },
+            Inst::Unary { opcode, dst, src } => Inst::Unary {
+                opcode,
+                dst,
+                src: src.alpha(alias),
+            },
+            Inst::BinaryRI {
+                opcode,
+                dst,
+                lhs,
+                rhs,
+            } => Inst::BinaryRI {
+                opcode,
+                dst,
+                lhs: lhs.alpha(alias),
+                rhs: rhs,
+            },
+            Inst::BinaryRR {
+                opcode,
+                dst,
+                lhs,
+                rhs,
+            } => Inst::BinaryRR {
+                opcode,
+                dst,
+                lhs: lhs.alpha(alias),
+                rhs: rhs.alpha(alias),
+            },
+        }
+    }
     fn dest(&self) -> Option<Name> {
         match self.clone() {
             Inst::Phi(Phi { dst, args }) => Some(dst),
@@ -108,7 +172,7 @@ impl Inst {
             Inst::CallDir { dst, label, args } => dst,
             Inst::Load { dst, ptr, idx } => Some(dst),
             Inst::Unary { opcode, dst, src } => Some(dst),
-            Inst::Mv { dst, src } => Some(dst),
+            //Inst::Mv { dst, src } => Some(dst),
             Inst::BinaryRI {
                 opcode,
                 dst,
@@ -132,7 +196,7 @@ impl Inst {
             Inst::Load { dst, ptr, idx } => vec![ptr],
             Inst::Store { ptr, idx, src } => vec![ptr, src],
             Inst::Unary { opcode, dst, src } => vec![src],
-            Inst::Mv { dst, src } => vec![src],
+            //            Inst::Mv { dst, src } => vec![src],
             Inst::BinaryRI {
                 opcode,
                 dst,
@@ -172,6 +236,26 @@ pub struct Block {
     pub last: ControlFlow,
     pub phis: Vec<Phi>,
 }
+impl ControlFlow {
+    pub fn alpha(self, alias: &mut HashMap<String, knormal::Var>) -> Self {
+        match self {
+            ControlFlow::Return(Some(x)) => ControlFlow::Return(Some(x.alpha(alias))),
+            ControlFlow::Branch(x, y, z) => ControlFlow::Branch(x.alpha(alias), y, z),
+            _ => self,
+        }
+    }
+}
+impl Block {
+    pub fn alpha(self, alias: &mut HashMap<String, knormal::Var>) -> Self {
+        let inst: VecDeque<_> = self.inst.into_iter().map(|x| x.alpha(alias)).collect();
+        Block {
+            label: self.label,
+            inst: inst,
+            last: self.last.alpha(alias),
+            phis: self.phis.into_iter().map(|x| x.alpha(alias)).collect(),
+        }
+    }
+}
 #[derive(Clone, Debug)]
 pub struct Fundef {
     pub name: (String, usize),
@@ -180,9 +264,12 @@ pub struct Fundef {
     pub entry: Label,
     pub blocks: Vec<Block>,
 }
-impl Block {}
 
-pub fn cls_to_ir(f: closure::Fundef, tyenv: &mut HashMap<usize, ty::Type>) -> Fundef {
+pub fn cls_to_ir(
+    f: closure::Fundef,
+    tyenv: &mut HashMap<usize, ty::Type>,
+    alias: &mut HashMap<String, knormal::Var>,
+) -> Fundef {
     let e = f.body;
     let mut label = String::from("entry");
     let (name, ty) = f.name.clone();
@@ -211,6 +298,7 @@ pub fn cls_to_ir(f: closure::Fundef, tyenv: &mut HashMap<usize, ty::Type>) -> Fu
                 &mut inst,
                 &mut blocks,
                 &mut phis,
+                alias,
                 Some(ret.clone()),
             );
             blocks.push(Block {
@@ -219,6 +307,7 @@ pub fn cls_to_ir(f: closure::Fundef, tyenv: &mut HashMap<usize, ty::Type>) -> Fu
                 last: ControlFlow::Return(Some(Var::OpVar(ret))),
                 phis: phis,
             });
+            let blocks = blocks.into_iter().map(|x| x.alpha(alias)).collect();
             Fundef {
                 name: f.name,
                 args: f.args,
@@ -235,6 +324,7 @@ pub fn cls_to_ir(f: closure::Fundef, tyenv: &mut HashMap<usize, ty::Type>) -> Fu
                 &mut inst,
                 &mut blocks,
                 &mut phis,
+                alias,
                 None,
             );
             blocks.push(Block {
@@ -243,6 +333,8 @@ pub fn cls_to_ir(f: closure::Fundef, tyenv: &mut HashMap<usize, ty::Type>) -> Fu
                 last: ControlFlow::Return(None),
                 phis: phis,
             });
+
+            let blocks = blocks.into_iter().map(|x| x.alpha(alias)).collect();
             Fundef {
                 name: f.name,
                 args: f.args,
@@ -254,7 +346,11 @@ pub fn cls_to_ir(f: closure::Fundef, tyenv: &mut HashMap<usize, ty::Type>) -> Fu
     }
 }
 pub fn f(functions: Vec<closure::Fundef>, tyenv: &mut HashMap<usize, ty::Type>) -> Vec<Fundef> {
-    let res: Vec<_> = functions.into_iter().map(|x| cls_to_ir(x, tyenv)).collect();
+    let mut alias = HashMap::new();
+    let res: Vec<_> = functions
+        .into_iter()
+        .map(|x| cls_to_ir(x, tyenv, &mut alias))
+        .collect();
     res
 }
 fn new_name(st: &String, ty: ty::Type, tyenv: &mut HashMap<usize, ty::Type>) -> Name {
@@ -269,6 +365,7 @@ pub fn g(
     block: &mut VecDeque<Inst>,
     blocks: &mut Vec<Block>,
     phis: &mut Vec<Phi>,
+    alias: &mut HashMap<String, knormal::Var>,
     dst: Option<(String, usize)>,
 ) {
     let e = match e {
@@ -330,8 +427,8 @@ pub fn g(
             block.push_back(inst);
         }
         CExpr::CLet((x, y), u, v) => {
-            g(*u, tyenv, label, block, blocks, phis, Some((x, y)));
-            g(*v, tyenv, label, block, blocks, phis, dst);
+            g(*u, tyenv, label, block, blocks, phis, alias, Some((x, y)));
+            g(*v, tyenv, label, block, blocks, phis, alias, dst);
         }
         CExpr::CIf(cond, x, y, t, f) => {
             let ty = syntax::genvar();
@@ -361,7 +458,7 @@ pub fn g(
                     block.clear();
                     phis.clear();
                     label.clone_from(&$label);
-                    g(*$e, tyenv, label, block, blocks, phis, $dst);
+                    g(*$e, tyenv, label, block, blocks, phis, alias, $dst);
                     blocks.push(Block {
                         label: label.clone(),
                         inst: block.clone(),
@@ -429,18 +526,22 @@ pub fn g(
                 };
                 block.push_back(inst);
             }
-            g(*v, tyenv, label, block, blocks, phis, dst);
+            g(*v, tyenv, label, block, blocks, phis, alias, dst);
         }
         CExpr::CAppDir(label, args) => block.push_back(Inst::CallDir { dst, label, args }),
+        CExpr::CAppCls(label, args) => block.push_back(Inst::CallCls { dst, label, args }),
+
         CExpr::CVar(y) => {
             if dst.is_some() {
-                block.push_back(Inst::Mv {
-                    src: y,
-                    dst: dst.unwrap(),
-                })
+                alias.insert(dst.unwrap().0, y);
+                // dstの全ての出現をyにする
+                // block.push_back(Inst::Mv {
+                //     src: y,
+                //     dst: dst.unwrap(),
+                // })
             }
         }
-        CExpr::CAppCls(_, _) => unimplemented!(),
+        // CExpr::CAppCls(_, _) => unimplemented!(),
         CExpr::CMakeCls(_, _, _) => unimplemented!(),
     };
 }
