@@ -32,8 +32,8 @@ pub enum CExpr {
     CLetTuple(Vec<(String, usize)>, Var, BE),
     CTuple(Vec<Var>),
     CMakeCls((String, usize), Closure, BE),
-    CAppCls(String, Vec<Var>),
-    CAppDir(String, Vec<Var>),
+    CAppCls((String, usize), Vec<Var>),
+    CAppDir((String, usize), Vec<Var>),
 }
 
 pub fn proj_only_var(e: &Var) -> HashSet<String> {
@@ -84,8 +84,8 @@ pub fn fv(e: &CExpr) -> HashSet<String> {
             //f1.union(&f2).cloned().collect()
         }
         CExpr::CTuple(elements) => of_vec!(elements),
-        CExpr::CAppDir(f, args) => of_vec!(args),
-        CExpr::CAppCls(f, args) => {
+        CExpr::CAppDir((f, ty), args) => of_vec!(args),
+        CExpr::CAppCls((f, ty), args) => {
             let mut a = of_vec!(args);
             a.insert(f.to_string());
             a
@@ -134,8 +134,8 @@ fn g(
             (CExpr::CLetTuple(binds, e1, e2), t2)
         }
         KTuple(elements) => (CExpr::CTuple(elements), List::new()),
-        KApp(Var::OpVar(f, _), args) if !known.contains(&f) => {
-            (CExpr::CAppCls(f, args), List::new())
+        KApp(Var::OpVar(f, y), args) if !known.contains(&f) => {
+            (CExpr::CAppCls((f, y), args), List::new())
         }
         KApp(f, args) => (CExpr::CAppDir(knormal::get_var(&f), args), List::new()),
         KLetRec(fundef, e) => {

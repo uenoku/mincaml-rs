@@ -18,8 +18,8 @@ pub enum ControlFlow {
 }
 #[derive(Debug, Clone)]
 pub struct Phi {
-    args: Vec<(Var, Label)>,
-    dst: Name,
+    pub args: Vec<(Var, Label)>,
+    pub dst: Name,
 }
 type Var = knormal::Var;
 
@@ -89,12 +89,12 @@ pub enum Inst {
     },
     CallDir {
         dst: Option<Name>,
-        label: String,
+        label: Name,
         args: Vec<Var>,
     },
     CallCls {
         dst: Option<Name>,
-        label: String,
+        label: Name,
         args: Vec<Var>,
     },
     Phi(Phi),
@@ -257,6 +257,11 @@ pub fn f(functions: Vec<closure::Fundef>, tyenv: &mut HashMap<usize, ty::Type>) 
     let res: Vec<_> = functions.into_iter().map(|x| cls_to_ir(x, tyenv)).collect();
     res
 }
+fn new_name(st: &String, ty: ty::Type, tyenv: &mut HashMap<usize, ty::Type>) -> Name {
+    let tyvar = syntax::genvar();
+    tyenv.insert(tyvar, ty.clone());
+    (st.clone(), tyvar)
+}
 pub fn g(
     e: closure::CExpr,
     tyenv: &mut HashMap<usize, ty::Type>,
@@ -394,14 +399,15 @@ pub fn g(
         }
 
         CExpr::CTuple(elements) => {
-            let ty = syntax::genvar();
-            tyenv.insert(ty, ty::Type::TyPtr);
-            let mut i = 0;
-            let n = syntax::genname();
-            let ptr = (n.clone(), ty);
+            let ptr = new_name(&syntax::genname(), ty::Type::TyPtr, tyenv);
+            let f = new_name(
+                &String::from("create_tuple"),
+                ty::Type::TyFun(vec![ty::Type::TyInt], Box::new(ty::Type::TyPtr)),
+                tyenv,
+            );
             block.push_back(Inst::CallDir {
-                dst: Some(ptr),
-                label: String::from("create_tuple"),
+                dst: Some(ptr.clone()),
+                label: f,
                 args: vec![knormal::Var::Constant(syntax::Const::CInt(
                     elements.len() as i32
                 ))],
@@ -410,7 +416,7 @@ pub fn g(
                 block.push_back(Inst::Store {
                     src: x,
                     idx: knormal::Var::Constant(syntax::Const::CInt(i as i32)),
-                    ptr: knormal::Var::OpVar(n.clone(), ty),
+                    ptr: knormal::Var::OpVar(ptr.0.clone(), ptr.1),
                 });
             }
         }

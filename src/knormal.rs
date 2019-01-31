@@ -37,10 +37,9 @@ impl Var {
         }
     }
 }
-pub fn get_var(x: &Var) -> String {
+pub fn get_var(x: &Var) -> (String, usize) {
     match x {
-        Var::OpVar(y, _) => y.clone(),
-        Var::Ext(y, _) => y.clone(),
+        Var::OpVar(y, x) | Var::Ext(y, x) => (y.clone(), *x),
         _ => unreachable!(),
     }
 }
