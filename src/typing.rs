@@ -13,6 +13,7 @@ pub enum TypingError {
     UnifyError((Type, Type)),
     OccurenceCheckError(usize),
     UnboundedVariableError(Var),
+    MainIsNotVoid,
 }
 fn occurence_check(ty: &Type, v: &usize) -> Result<(), TypingError> {
     match ty {
@@ -126,6 +127,8 @@ fn g(
         EConst(Const::CFloat(_)) => no_constraints!(Type::TyFloat),
         EConst(Const::CBool(_)) => no_constraints!(Type::TyBool),
         EConst(Const::CUnit) => no_constraints!(Type::TyUnit),
+        EConst(Const::CPtr(_)) => no_constraints!(Type::TyPtr),
+
         EExt(u) => no_constraints!(Type::TyVar(env.get(u).unwrap().clone())),
         EVar(v) => {
             let x = env.get(v);
@@ -238,9 +241,17 @@ pub fn f(
 ) -> Result<HashMap<usize, Type>, TypingError> {
     let mut unifier = HashMap::new();
     let mut constrains = Vec::new();
-    let (_) = g(&expr, &env, &mut constrains)?;
+    let ty = g(&expr, &env, &mut constrains)?;
 
     let constrains = util::from_vec(&constrains);
     unify(constrains, &mut unifier)?;
+    let ty = unifier.iter().fold(ty, |acc, (key, v)| subst(&acc, key, v));
+
     Ok(unifier)
+    // match ty {
+    //     ty::Type::TyUnit | ty::Type::TyVar(_)  => Ok(unifier),
+    //     _ => {
+    //         Err(TypingError::MainIsNotVoid)
+    //     }
+    // }
 }

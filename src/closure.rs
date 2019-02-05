@@ -126,7 +126,7 @@ fn g(
             (CExpr::CLet((name, ty), e1, e2), concat(t1, t2))
         }
         KLetTuple(binds, e1, e2) => {
-            //let (e1, t1) = sub!(e1, env);
+            // let (e1, t1) = sub!(e1, env);
             let env_ = binds.iter().fold(env.clone(), |acc, (name, ty)| {
                 HashTrieMap::insert(&acc, name.clone(), ty.clone())
             });
@@ -175,6 +175,7 @@ fn g(
             });
             let (e2, t2) = g(*e.clone(), &env, tyenv, &known_);
             if fv(&e2).contains(name) {
+                info!("found closure name: {}", name);
                 (
                     CExpr::CMakeCls(
                         (name.clone(), ty.clone()),

@@ -152,11 +152,12 @@ fn g(
                 match op {
                     Op::Array => {
                         // Array(number of elements, init)
-                        infer_var(&args[1], tyenv)
+                        Type::TyArray(Box::new(infer_var(&args[1], tyenv)))
                     }
                     Op::Store => {
+                        Type::TyUnit
                         // Store(dest array, index, src)
-                        infer_var(&args[2], tyenv)
+                        // infer_var(&args[2], tyenv)
                     }
                     Op::Load => {
                         // Load(src array, index)
@@ -249,6 +250,7 @@ fn g(
             });
             let ty = genvar();
             let env_ = env_.insert(name.clone(), ty);
+            tyenv.insert(ty, t1);
             let (k2, t2) = g(&e2, &env_, tyenv);
             (
                 Box::new(KExpr::KLet(

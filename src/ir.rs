@@ -64,6 +64,10 @@ pub enum OpUnary {
     Not,
     FNeg,
 }
+pub struct Compiler {
+    functions: Vec<Fundef>,
+    tyenv: HashMap<usize, ty::Type>,
+}
 pub type Name = (String, usize);
 
 #[derive(Debug, Clone)]
@@ -90,10 +94,10 @@ pub enum Inst {
         idx: Var,
         src: Var,
     },
-    // Mv {
-    //     src: Var,
-    //     dst: Name,
-    // },
+    Mv {
+        src: Var,
+        dst: Name,
+    },
     Load {
         dst: Name,
         ptr: Var,
@@ -109,6 +113,12 @@ pub enum Inst {
         label: Name,
         args: Vec<Var>,
     },
+    ArrayAlloc {
+        src: Var,
+        dst: Name,
+        len: i32,
+        ptr: usize,
+    },
     Phi(Phi),
 }
 
@@ -121,7 +131,7 @@ impl Inst {
                 label,
                 args: args.into_iter().map(|x| x.alpha(alias)).collect(),
             },
-            Inst::CallDir { dst, label, args } => Inst::CallCls {
+            Inst::CallDir { dst, label, args } => Inst::CallDir {
                 dst,
                 label,
                 args: args.into_iter().map(|x| x.alpha(alias)).collect(),
@@ -152,6 +162,16 @@ impl Inst {
                 lhs: lhs.alpha(alias),
                 rhs: rhs,
             },
+            Inst::Mv { dst, src } => Inst::Mv {
+                dst,
+                src: src.alpha(alias),
+            },
+            Inst::ArrayAlloc { src, dst, len, ptr } => Inst::ArrayAlloc {
+                src: src.alpha(alias),
+                dst,
+                len,
+                ptr,
+            },
             Inst::BinaryRR {
                 opcode,
                 dst,
@@ -172,7 +192,7 @@ impl Inst {
             Inst::CallDir { dst, label, args } => dst,
             Inst::Load { dst, ptr, idx } => Some(dst),
             Inst::Unary { opcode, dst, src } => Some(dst),
-            //Inst::Mv { dst, src } => Some(dst),
+            Inst::Mv { dst, src } => Some(dst),
             Inst::BinaryRI {
                 opcode,
                 dst,
@@ -185,6 +205,7 @@ impl Inst {
                 lhs,
                 rhs,
             } => Some(dst),
+            Inst::ArrayAlloc { src, dst, len, ptr } => Some(dst),
             _ => None,
         }
     }
@@ -196,7 +217,7 @@ impl Inst {
             Inst::Load { dst, ptr, idx } => vec![ptr],
             Inst::Store { ptr, idx, src } => vec![ptr, src],
             Inst::Unary { opcode, dst, src } => vec![src],
-            //            Inst::Mv { dst, src } => vec![src],
+            Inst::Mv { dst, src } => vec![src],
             Inst::BinaryRI {
                 opcode,
                 dst,
@@ -209,6 +230,7 @@ impl Inst {
                 lhs,
                 rhs,
             } => vec![rhs],
+            Inst::ArrayAlloc { src, dst, len, ptr } => vec![src],
         }
     }
     fn kill(&self) -> Set<String> {
@@ -273,10 +295,10 @@ pub fn cls_to_ir(
     let e = f.body;
     let mut label = String::from("entry");
     let (name, ty) = f.name.clone();
-    info!("{} {:?}", name, tyenv.get(&ty).unwrap());
+    //info!("{} {:?}", name, tyenv.get(&ty).unwrap());
     let ty = match tyenv.get(&ty).unwrap() {
         ty::Type::TyFun(x, y) => match **y {
-            ty::Type::TyUnit => None,
+            ty::Type::TyUnit | ty::Type::TyVar(_) => None,
             _ => Some(*y.clone()),
         },
         _ => unreachable!(),
@@ -307,7 +329,8 @@ pub fn cls_to_ir(
                 last: ControlFlow::Return(Some(Var::OpVar(ret))),
                 phis: phis,
             });
-            let blocks = blocks.into_iter().map(|x| x.alpha(alias)).collect();
+            //println!("alias = {:?}", alias);
+            //            let blocks = blocks.into_iter().map(|x| x.alpha(alias)).collect();
             Fundef {
                 name: f.name,
                 args: f.args,
@@ -334,7 +357,8 @@ pub fn cls_to_ir(
                 phis: phis,
             });
 
-            let blocks = blocks.into_iter().map(|x| x.alpha(alias)).collect();
+            //println!("alias = {:?}", alias);
+            //            let blocks = blocks.into_iter().map(|x| x.alpha(alias)).collect();
             Fundef {
                 name: f.name,
                 args: f.args,
@@ -368,6 +392,7 @@ pub fn g(
     alias: &mut HashMap<String, knormal::Var>,
     dst: Option<(String, usize)>,
 ) {
+    //info!("{:?} {:?} {:?}",e,tyenv, dst );
     let e = match e {
         CExpr::COp(opcode, operand) => {
             macro_rules! binrr {
@@ -427,7 +452,12 @@ pub fn g(
             block.push_back(inst);
         }
         CExpr::CLet((x, y), u, v) => {
-            g(*u, tyenv, label, block, blocks, phis, alias, Some((x, y)));
+            match tyenv.get(&y).unwrap() {
+                ty::Type::TyUnit | ty::Type::TyVar(_) => {
+                    g(*u, tyenv, label, block, blocks, phis, alias, None)
+                }
+                _ => g(*u, tyenv, label, block, blocks, phis, alias, Some((x, y))),
+            }
             g(*v, tyenv, label, block, blocks, phis, alias, dst);
         }
         CExpr::CIf(cond, x, y, t, f) => {
@@ -458,9 +488,9 @@ pub fn g(
                     block.clear();
                     phis.clear();
                     label.clone_from(&$label);
-                    g(*$e, tyenv, label, block, blocks, phis, alias, $dst);
+                    g(*$e, tyenv, $label, block, blocks, phis, alias, $dst);
                     blocks.push(Block {
-                        label: label.clone(),
+                        label: $label.clone(),
                         inst: block.clone(),
                         last: ControlFlow::Jump(cont_label.clone()),
                         phis: phis.clone(),
@@ -469,8 +499,8 @@ pub fn g(
             }
             if dst.is_none() {
                 // phiは生えない
-                sub!(t_label, t, None);
-                sub!(f_label, f, None);
+                sub!(&mut t_label, t, None);
+                sub!(&mut f_label, f, None);
                 block.clear();
                 phis.clear();
                 label.clone_from(&cont_label);
@@ -478,8 +508,8 @@ pub fn g(
                 let (name, ty) = dst.unwrap();
                 let tv = syntax::genname();
                 let fv = syntax::genname();
-                sub!(t_label, t, Some((tv.clone(), ty)));
-                sub!(f_label, f, Some((fv.clone(), ty)));
+                sub!(&mut t_label, t, Some((tv.clone(), ty)));
+                sub!(&mut f_label, f, Some((fv.clone(), ty)));
                 block.clear();
                 phis.clear();
                 label.clone_from(&cont_label);
@@ -496,14 +526,15 @@ pub fn g(
         }
 
         CExpr::CTuple(elements) => {
-            let ptr = new_name(&syntax::genname(), ty::Type::TyPtr, tyenv);
+            //let ptr = new_name(&syntax::genname(), ty::Type::TyPtr, tyenv);
             let f = new_name(
                 &String::from("create_tuple"),
                 ty::Type::TyFun(vec![ty::Type::TyInt], Box::new(ty::Type::TyPtr)),
                 tyenv,
             );
+            let dst = dst.unwrap();
             block.push_back(Inst::CallDir {
-                dst: Some(ptr.clone()),
+                dst: Some(dst.clone()),
                 label: f,
                 args: vec![knormal::Var::Constant(syntax::Const::CInt(
                     elements.len() as i32
@@ -513,7 +544,7 @@ pub fn g(
                 block.push_back(Inst::Store {
                     src: x,
                     idx: knormal::Var::Constant(syntax::Const::CInt(i as i32)),
-                    ptr: knormal::Var::OpVar(ptr.0.clone(), ptr.1),
+                    ptr: knormal::Var::OpVar(dst.0.clone(), dst.1),
                 });
             }
         }
@@ -533,15 +564,12 @@ pub fn g(
 
         CExpr::CVar(y) => {
             if dst.is_some() {
-                alias.insert(dst.unwrap().0, y);
-                // dstの全ての出現をyにする
-                // block.push_back(Inst::Mv {
-                //     src: y,
-                //     dst: dst.unwrap(),
-                // })
+                block.push_back(Inst::Mv {
+                    src: y,
+                    dst: dst.unwrap(),
+                })
             }
         }
-        // CExpr::CAppCls(_, _) => unimplemented!(),
         CExpr::CMakeCls(_, _, _) => unimplemented!(),
     };
 }

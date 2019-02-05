@@ -13,6 +13,7 @@ extern crate env_logger;
 mod alpha;
 mod arg_parse;
 mod closure;
+mod hp_alloc;
 mod ir;
 mod knormal;
 mod llvmcodegen;
@@ -145,28 +146,100 @@ fn test_minrt() {
 fn test_type() {
     type_check("let a = Array.make 2 2 in a.(0) <- if true then 1 else 3 ; a");
 }
-fn main() {
-    std::env::set_var("RUST_LOG", "info");
-    env_logger::init();
-    let args: Vec<String> = env::args().collect();
-    let opts = parse(args).unwrap();
-    let mut file = File::open(&opts.filename).unwrap();
-    info!("input file = {}", opts.filename);
+pub fn add_bulidinfun(
+    s: &str,
+    ty: ty::Type,
+    external: HashTrieMap<String, usize>,
+    tyenv: &mut HashMap<usize, ty::Type>,
+) -> HashTrieMap<String, usize> {
+    let t = syntax::genvar();
+    tyenv.insert(t, ty);
+    external.insert(String::from(s), t)
+}
+
+pub struct Env {
+    pub tyenv: HashMap<usize, ty::Type>,
+}
+pub fn get_ir(path: &String, alpha: bool) -> Result<(Vec<ir::Fundef>, Env), Error> {
+    info!("input file = {}", path);
+    let mut file = File::open(path).unwrap();
     let mut contents = String::new();
-    file.read_to_string(&mut contents);
+    file.read_to_string(&mut contents)?;
     let p = parser::ExprParser::new().parse(contents.as_str()).unwrap();
     info!("parse end");
     debug!("{:?}", p);
     let (p, external) = replace_ext::f(*p);
     let env = external;
     let mut tyenv = typing::f(Box::new(p.clone()), &env).unwrap();
+
     info!("type check end");
+
+    info!("{:?}", tyenv.get(&3541));
     let p = knormal::f(Box::new(p), &env, &mut tyenv);
     info!("knormaliz end");
-    let p = alpha::f(p);
+    info!("{:?}", tyenv.get(&3541));
+    let p = if alpha { alpha::f(p) } else { *p };
     let p = closure::f(p, &env, &mut tyenv);
+
+    info!("{:?}", tyenv.get(&3541));
     info!("closure coversion end");
     let p = ir::f(p, &mut tyenv);
-    println!("{:?}", p);
-    llvmcodegen::f(p, tyenv, HashMap::new(), opts.filename);
+
+    info!("{:?}", tyenv.get(&3541));
+    info!("ir coversion end");
+    Ok((p, Env { tyenv }))
+}
+fn main() -> Result<(), Error> {
+    std::env::set_var("RUST_LOG", "debug");
+    env_logger::init();
+    let args: Vec<String> = env::args().collect();
+    let opts = parse(args).unwrap();
+    let (mut p, mut env) = get_ir(&opts.filename, true)?;
+    let mut builtin = HashMap::new();
+    builtin.insert(
+        String::from("create_array"),
+        ty::Type::TyFun(
+            vec![ty::Type::TyInt, ty::Type::TyInt],
+            Box::new(ty::Type::TyPtr),
+        ),
+    );
+    builtin.insert(
+        String::from("create_tuple"),
+        ty::Type::TyFun(vec![ty::Type::TyInt], Box::new(ty::Type::TyPtr)),
+    );
+    builtin.insert(
+        String::from("create_array_float"),
+        ty::Type::TyFun(
+            vec![ty::Type::TyInt, ty::Type::TyFloat],
+            Box::new(ty::Type::TyPtr),
+        ),
+    );
+
+    match opts.globalname {
+        Some(x) => {
+            let mut extenv = HashMap::new();
+            let mut hp = 1;
+            let (glb, e) = get_ir(&x, false)?;
+            glb[0].clone().alloc(&mut hp, &mut extenv);
+            for i in &mut p {
+                if (i.name.0.as_str() == "main") {
+                    let tmp: Vec<_> = glb[0].blocks[0].inst.clone().into_iter().rev().collect();
+                    for j in tmp {
+                        i.blocks[0].inst.push_front(j);
+                    }
+                    println!("{:?}", i.blocks[0]);
+                }
+            }
+            println!("{:?} \n{:?}", glb[0], extenv);
+            e.tyenv.into_iter().for_each(|(x, y)| {
+                env.tyenv.insert(x, y);
+            });
+            debug!("{:?}", env.tyenv);
+            llvmcodegen::f(p, env.tyenv, extenv, builtin, opts.filename).unwrap();
+        }
+        None => {
+            llvmcodegen::f(p, env.tyenv, HashMap::new(), builtin, opts.filename).unwrap();
+        }
+    };
+    Ok(())
 }

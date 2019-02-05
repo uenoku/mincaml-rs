@@ -50,6 +50,7 @@ pub enum Const {
     CInt(i32),
     CFloat(f32),
     CBool(bool),
+    CPtr(i32),
     CUnit,
 }
 pub type Var = String;
@@ -106,5 +107,6 @@ pub fn infer_const(x: &Const) -> Type {
         Const::CFloat(_) => Type::TyFloat,
         Const::CBool(_) => Type::TyBool,
         Const::CUnit => Type::TyUnit,
+        Const::CPtr(_) => Type::TyPtr,
     }
 }
