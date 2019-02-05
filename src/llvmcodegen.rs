@@ -30,22 +30,22 @@ pub enum LlvmError {
 }
 pub fn cmp_to_ipred(cmp: &syntax::Cmp) -> IntPredicate {
     match cmp {
-        EQ => IntPredicate::EQ,
-        NE => IntPredicate::NE,
-        LT => IntPredicate::SLT,
-        GT => IntPredicate::SGT,
-        LE => IntPredicate::SLE,
-        GE => IntPredicate::SGE,
+        syntax::Cmp::EQ => IntPredicate::EQ,
+        syntax::Cmp::NE => IntPredicate::NE,
+        syntax::Cmp::LT => IntPredicate::SLT,
+        syntax::Cmp::GT => IntPredicate::SGT,
+        syntax::Cmp::LE => IntPredicate::SLE,
+        syntax::Cmp::GE => IntPredicate::SGE,
     }
 }
 pub fn cmp_to_fpred(cmp: &syntax::Cmp) -> FloatPredicate {
     match cmp {
-        EQ => FloatPredicate::OEQ,
-        NE => FloatPredicate::ONE,
-        LT => FloatPredicate::OLT,
-        GT => FloatPredicate::OGT,
-        LE => FloatPredicate::OLE,
-        GE => FloatPredicate::OGE,
+        syntax::Cmp::EQ => FloatPredicate::OEQ,
+        syntax::Cmp::NE => FloatPredicate::ONE,
+        syntax::Cmp::LT => FloatPredicate::OLT,
+        syntax::Cmp::GT => FloatPredicate::OGT,
+        syntax::Cmp::LE => FloatPredicate::OLE,
+        syntax::Cmp::GE => FloatPredicate::OGE,
     }
 }
 pub struct LlvmEmitter<'a> {
