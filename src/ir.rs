@@ -185,7 +185,7 @@ impl Inst {
             },
         }
     }
-    fn dest(&self) -> Option<Name> {
+    pub fn dest(&self) -> Option<Name> {
         match self.clone() {
             Inst::Phi(Phi { dst, args }) => Some(dst),
             Inst::CallCls { dst, label, args } => dst,
@@ -293,7 +293,8 @@ pub fn cls_to_ir(
     alias: &mut HashMap<String, knormal::Var>,
 ) -> Fundef {
     let e = f.body;
-    let mut label = String::from("entry");
+
+    let mut label = String::from("entry'");
     let (name, ty) = f.name.clone();
     //info!("{} {:?}", name, tyenv.get(&ty).unwrap());
     let ty = match tyenv.get(&ty).unwrap() {
@@ -305,6 +306,12 @@ pub fn cls_to_ir(
     };
 
     let mut blocks = Vec::new();
+    blocks.push(Block {
+        label: "entry".to_string(),
+        inst: VecDeque::new(),
+        phis: Vec::new(),
+        last: ControlFlow::Jump("entry'".to_string()),
+    });
     let mut inst = VecDeque::new();
     let mut phis = Vec::new();
     match ty {

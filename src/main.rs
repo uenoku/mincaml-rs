@@ -19,6 +19,7 @@ mod knormal;
 mod llvmcodegen;
 mod replace_ext;
 mod syntax;
+mod to_loop;
 mod ty;
 mod typing;
 mod util;
@@ -174,23 +175,20 @@ pub fn get_ir(path: &String, alpha: bool) -> Result<(Vec<ir::Fundef>, Env), Erro
 
     info!("type check end");
 
-    info!("{:?}", tyenv.get(&3541));
     let p = knormal::f(Box::new(p), &env, &mut tyenv);
     info!("knormaliz end");
-    info!("{:?}", tyenv.get(&3541));
     let p = if alpha { alpha::f(p) } else { *p };
     let p = closure::f(p, &env, &mut tyenv);
 
-    info!("{:?}", tyenv.get(&3541));
     info!("closure coversion end");
     let p = ir::f(p, &mut tyenv);
+    let p: Vec<_> = p.into_iter().map(|x| x.replace_self_rec_block()).collect();
 
-    info!("{:?}", tyenv.get(&3541));
     info!("ir coversion end");
     Ok((p, Env { tyenv }))
 }
 fn main() -> Result<(), Error> {
-    std::env::set_var("RUST_LOG", "debug");
+    std::env::set_var("RUST_LOG", "info");
     env_logger::init();
     let args: Vec<String> = env::args().collect();
     let opts = parse(args).unwrap();

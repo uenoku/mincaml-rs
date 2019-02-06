@@ -178,7 +178,7 @@ impl<'a> LlvmEmitter<'a> {
 }
 impl<'a> knormal::Var {
     pub fn build_bool(&self, emitter: &mut LlvmEmitter<'a>) -> Result<IntValue, LlvmError> {
-        println!("build bool {:?}", self);
+        debug!("build bool {:?}", self);
         match self {
             knormal::Var::OpVar(x, ty) => match emitter.variables.get(x) {
                 Some(x) => Ok(x.into_int_value()),
@@ -192,7 +192,7 @@ impl<'a> knormal::Var {
         }
     }
     pub fn build_i32(&self, emitter: &mut LlvmEmitter<'a>) -> Result<IntValue, LlvmError> {
-        println!("build i32 {:?}", self);
+        debug!("build i32 {:?}", self);
         match self {
             knormal::Var::OpVar(x, ty) => match emitter.variables.get(x) {
                 Some(x) => Ok(x.into_int_value()),
@@ -205,7 +205,7 @@ impl<'a> knormal::Var {
         }
     }
     pub fn build_f32(&self, emitter: &mut LlvmEmitter<'a>) -> Result<FloatValue, LlvmError> {
-        println!("build f32 {:?}", self);
+        debug!("build f32 {:?}", self);
         match self {
             knormal::Var::OpVar(x, ty) => match emitter.variables.get(x) {
                 Some(x) => Ok(x.into_float_value()),
@@ -219,7 +219,7 @@ impl<'a> knormal::Var {
     }
 
     pub fn build_ptr(&self, emitter: &mut LlvmEmitter<'a>) -> Result<PointerValue, LlvmError> {
-        println!("build ptr {:?}", self);
+        debug!("build ptr {:?}", self);
         match self {
             knormal::Var::OpVar(x, ty) => match emitter.variables.get(x) {
                 Some(x) => Ok(x.into_pointer_value()),
