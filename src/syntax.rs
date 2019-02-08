@@ -1,6 +1,6 @@
 use crate::ty::Type;
 use crate::ty::Type::*;
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Cmp {
     EQ,
     NE,

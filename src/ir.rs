@@ -35,7 +35,7 @@ impl Phi {
 }
 type Var = knormal::Var;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub enum OpBinaryRR {
     // register,register
     Add,
@@ -233,7 +233,7 @@ impl Inst {
             Inst::ArrayAlloc { src, dst, len, ptr } => vec![src],
         }
     }
-    fn kill(&self) -> Set<String> {
+    pub fn kill(&self) -> Set<String> {
         let mut ret = Set::new();
         match &self.dest() {
             Some((x, y)) => ret.insert(x.clone()),
@@ -241,7 +241,7 @@ impl Inst {
         };
         ret
     }
-    fn gen(&self) -> Set<String> {
+    pub fn gen(&self) -> Set<String> {
         let mut ret = Set::new();
         for i in &self.operand() {
             let v = i.set();

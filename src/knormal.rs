@@ -36,6 +36,31 @@ impl Var {
     pub fn OpVar((x, ty): (String, usize)) -> Var {
         Var::OpVar(x, ty)
     }
+
+    pub fn is_constant(&self) -> bool {
+        match self {
+            Var::Constant(_) => true,
+            _ => false,
+        }
+    }
+    pub fn get_name_opt(&self) -> Option<String> {
+        match self {
+            Var::OpVar(x, y) => Some(x.clone()),
+            _ => None,
+        }
+    }
+    pub fn is_name_eq(&self, e: &String) -> bool {
+        match self {
+            Var::OpVar(x, y) => *e == *x,
+            _ => false,
+        }
+    }
+    pub fn get_signedimm(&self) -> Option<i32> {
+        match self {
+            Var::Constant(Const::CInt(x)) => Some(*x),
+            _ => Option::None,
+        }
+    }
     pub fn getimm(&self) -> Option<usize> {
         match self {
             Var::Constant(Const::CInt(x)) => Some(*x as usize),

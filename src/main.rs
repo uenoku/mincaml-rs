@@ -182,8 +182,7 @@ pub fn get_ir(path: &String, alpha: bool) -> Result<(Vec<ir::Fundef>, Env), Erro
 
     info!("closure coversion end");
     let p = ir::f(p, &mut tyenv);
-    let p: Vec<_> = p.into_iter().map(|x| x.replace_self_rec_block()).collect();
-
+    let p = to_loop::f(p);
     info!("ir coversion end");
     Ok((p, Env { tyenv }))
 }
@@ -221,19 +220,17 @@ fn main() -> Result<(), Error> {
             let main = glb[0].clone().alloc(&mut hp, &mut extenv);
             for i in &mut p {
                 if (i.name.0.as_str() == "main") {
-                    let tmp: Vec<_> = main.blocks[0].inst.clone().into_iter().rev().collect();
+                    let tmp: Vec<_> = main.blocks[1].inst.clone().into_iter().rev().collect();
                     for j in tmp {
-                        i.blocks[0].inst.push_front(j);
+                        i.blocks[1].inst.push_front(j);
                     }
-                    i.blocks[0].inst.push_front(ir::Inst::Store {
+                    i.blocks[1].inst.push_front(ir::Inst::Store {
                         ptr: knormal::Var::Constant(syntax::Const::CPtr(1)),
                         idx: knormal::Var::Constant(syntax::Const::CInt(0)),
                         src: knormal::Var::Constant(syntax::Const::CInt(hp as i32)),
                     });
-                    println!("{:?}", i.blocks[0]);
                 }
             }
-            println!("{:?} \n{:?}", glb[0], extenv);
             e.tyenv.into_iter().for_each(|(x, y)| {
                 env.tyenv.insert(x, y);
             });
