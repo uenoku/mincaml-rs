@@ -1,5 +1,6 @@
 use crate::ir;
 use crate::knormal;
+use crate::syntax;
 use rpds::HashTrieSet;
 use std::collections::HashSet;
 static ENTRY_INDEX: usize = 1;
@@ -7,13 +8,119 @@ pub fn f(p: Vec<ir::Fundef>) -> Vec<ir::Fundef> {
     let p: Vec<_> = p.into_iter().map(|x| x.replace_self_rec_block()).collect();
     for i in &p {
         let x = i.get_loop_idx();
+        let hoge = i.only_iter_is_to_loop();
+        let t = i.tmp();
         if x.is_some() {
-            info!("{} {:?}", i.name.0, x);
+            info!("{} {:?} {} {}", i.name.0, x, hoge, i.has_io(&p));
+            info!("{:?}", t);
         }
     }
     p
 }
+type Functions = Vec<ir::Fundef>;
+pub fn get_function_ref_opt<'a>(functions: &'a Functions, s: &String) -> Option<&'a ir::Fundef> {
+    for i in functions {
+        if *i.name.0 == *s {
+            return Some(i);
+        }
+    }
+    None
+}
+#[derive(Debug)]
+pub enum Index {
+    Const(i32),
+    Unkown,
+    Iter(i32),
+}
+type WR = Vec<Index>;
+type GlobalWR = (String, Vec<Index>);
+impl ir::Inst {
+    pub fn global_load(&self, fun: &ir::Fundef, iter: &String) -> Option<GlobalWR> {
+        match self {
+            ir::Inst::Load { dst, ptr, idx } => match fun.get_global_load(ptr, iter) {
+                Some((glb, mut index)) => match idx {
+                    knormal::Var::OpVar(x, y) if *x == *iter => {
+                        index.push(Index::Iter(0));
+                        Some((glb, index))
+                    }
+                    knormal::Var::OpVar(x, y) => match fun.get_instruction(x) {
+                        Some(y) => match y {
+                            ir::Inst::BinaryRR {
+                                opcode,
+                                rhs,
+                                lhs,
+                                dst,
+                            } if (opcode == ir::OpBinaryRR::Add
+                                || opcode == ir::OpBinaryRR::Sub) =>
+                            {
+                                if opcode == ir::OpBinaryRR::Add {
+                                    if lhs.is_name_eq(iter) && rhs.is_constant() {
+                                        index.push(Index::Iter(rhs.get_signedimm().unwrap()));
+                                    } else if rhs.is_name_eq(iter) && lhs.is_constant() {
+                                        index.push(Index::Iter(lhs.get_signedimm().unwrap()));
+                                    }
+                                } else if opcode == ir::OpBinaryRR::Sub {
+                                    if lhs.is_name_eq(iter) && rhs.is_constant() {
+                                        index.push(Index::Iter(-rhs.get_signedimm().unwrap()));
+                                    } else if rhs.is_name_eq(iter) && lhs.is_constant() {
+                                        index.push(Index::Unkown);
+                                    }
+                                }
+                                Some((glb, index))
+                            }
+                            _ => {
+                                index.push(Index::Unkown);
+                                Some((glb, index))
+                            }
+                        },
+                        None => {
+                            index.push(Index::Unkown);
+                            Some((glb, index))
+                        }
+                    },
+                    knormal::Var::Constant(syntax::Const::CInt(i)) => {
+                        index.push(Index::Const(*i));
+                        Some((glb, index))
+                    }
+                    _ => unreachable!(),
+                },
+                None => None,
+            },
+            _ => None,
+        }
+    }
+    pub fn has_io(&self, f: &String, functions: &Functions) -> bool {
+        match self {
+            ir::Inst::CallDir { label, args, dst } => {
+                if label.0.as_str() == "read_int"
+                    || label.0.as_str() == "read_float"
+                    || label.0.as_str() == "print_char"
+                {
+                    true
+                } else if *label.0 == *f {
+                    false
+                } else {
+                    match get_function_ref_opt(functions, &label.0) {
+                        Some(y) => y.has_io(functions),
+                        None => false,
+                    }
+                }
+            }
+            _ => false,
+        }
+    }
+}
 impl ir::Block {
+    pub fn get_global_load(&self, fun: &ir::Fundef, iter: &String) -> Vec<GlobalWR> {
+        let mut ans = vec![];
+        for i in &self.inst {
+            match i.global_load(fun, iter) {
+                Some(y) => ans.push(y),
+                None => (),
+            }
+        }
+        ans
+    }
     pub fn get_instruction(&self, x: &String) -> Option<ir::Inst> {
         for i in &self.inst {
             match i.dest() {
@@ -40,6 +147,9 @@ impl ir::Block {
             ir::ControlFlow::Return(_) => true,
             _ => false,
         }
+    }
+    pub fn has_io(&self, f: &String, functions: &Vec<ir::Fundef>) -> bool {
+        self.inst.iter().any(|x| x.has_io(f, functions))
     }
     // 飛ぶ先の任意のブロックで命令が行われずlastがJump|Returnである
     pub fn is_tail_block(&self, fun: &ir::Fundef) -> bool {
@@ -109,6 +219,38 @@ impl ir::Block {
 }
 type Blocks = Vec<ir::Block>;
 impl ir::Fundef {
+    pub fn tmp(&self) -> Vec<Vec<GlobalWR>> {
+        let mut ans = vec![];
+        for i in &self.blocks {
+            ans.push(self.get_global_load_by_block_ref(i));
+        }
+        ans
+    }
+    pub fn get_global_load_by_block_ref(&self, block: &ir::Block) -> Vec<GlobalWR> {
+        let iter = self.get_loop_idx();
+        match iter {
+            Some((iter, y, z)) => block.get_global_load(self, &iter),
+            None => block.get_global_load(self, &"".to_string()),
+        }
+    }
+    pub fn get_global_load(&self, ptr: &knormal::Var, iter: &String) -> Option<GlobalWR> {
+        match ptr {
+            knormal::Var::OpVar(x, y) => {
+                let inst = self.get_instruction(x);
+                match inst {
+                    Some(y) => y.global_load(self, iter),
+                    None =>
+                    // arg
+                    {
+                        // とりあえず
+                        None
+                    }
+                }
+            }
+            knormal::Var::Ext(x, y) => Some((x.to_string(), vec![])),
+            _ => unreachable!(),
+        }
+    }
     pub fn get_instruction(&self, name: &String) -> Option<ir::Inst> {
         for i in &self.blocks {
             match i.get_instruction(name) {
@@ -256,6 +398,20 @@ impl ir::Fundef {
         }
         //info!("name : {:?} iters {:?}", self.name, iters);
         iters
+    }
+    pub fn has_io(&self, functions: &Vec<ir::Fundef>) -> bool {
+        // あるブロックが存在してioを含む(これはめんどいので保守的に)
+        self.blocks
+            .iter()
+            .any(|x| x.has_io(&self.name.0, functions))
+    }
+    pub fn only_iter_is_to_loop(&self) -> bool {
+        // iter以外はループを繰り越さない
+        let iters = self.get_loop_idx();
+        match iters {
+            Some((x, y, z)) => self.blocks[ENTRY_INDEX].phis.len() == 1,
+            _ => false,
+        }
     }
     pub fn replace_self_rec_block(self) -> Self {
         let mut new_blocks = vec![];
