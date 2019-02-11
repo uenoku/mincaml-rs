@@ -273,18 +273,29 @@ fn g(
             let env_ = binds.iter().fold(env.clone(), |acc, (name, ty)| {
                 HashTrieMap::insert(&acc, name.clone(), ty.clone())
             });
-            let ty = genvar();
-            let env_ = env_.insert(name.clone(), ty);
-            tyenv.insert(ty, t1);
-            let (k2, t2) = g(&e2, &env_, tyenv);
-            (
-                Box::new(KExpr::KLet(
-                    (name.clone(), ty),
-                    k1,
-                    Box::new(KExpr::KLetTuple(binds.to_vec(), Var::OpVar(name, ty), k2)),
-                )),
-                t2,
-            )
+            match *k1 {
+                KExpr::KVar(Var::OpVar(name, ty)) => {
+                    let (k2, t2) = g(&e2, &env_, tyenv);
+                    (
+                        Box::new(KExpr::KLetTuple(binds.to_vec(), Var::OpVar(name, ty), k2)),
+                        t2,
+                    )
+                }
+                _ => {
+                    let ty = genvar();
+                    let env_ = env_.insert(name.clone(), ty);
+                    tyenv.insert(ty, t1);
+                    let (k2, t2) = g(&e2, &env_, tyenv);
+                    (
+                        Box::new(KExpr::KLet(
+                            (name.clone(), ty),
+                            k1,
+                            Box::new(KExpr::KLetTuple(binds.to_vec(), Var::OpVar(name, ty), k2)),
+                        )),
+                        t2,
+                    )
+                }
+            }
         }
     }
 }
