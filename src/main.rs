@@ -14,6 +14,7 @@ mod alpha;
 mod arg_parse;
 mod closure;
 mod hp_alloc;
+mod inline;
 mod ir;
 mod knormal;
 mod llvmcodegen;
@@ -238,6 +239,7 @@ fn main() -> Result<(), Error> {
             llvmcodegen::f(p, env.tyenv, extenv, builtin, opts.filename).unwrap();
         }
         None => {
+            info!("{:?}", p[0].clone().inline_all(&p));
             llvmcodegen::f(p, env.tyenv, HashMap::new(), builtin, opts.filename).unwrap();
         }
     };

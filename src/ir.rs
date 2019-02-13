@@ -21,10 +21,35 @@ pub struct Phi {
     pub args: Vec<(Var, Label)>,
     pub dst: Name,
 }
+pub fn alpha_name_opt(z: Option<Name>, alias: &HashMap<String, String>) -> Option<Name> {
+    match z {
+        Some((x, y)) => Some(match alias.get(&x) {
+            Some(z) => (z.to_string(), y),
+            None => (x, y),
+        }),
+        None => None,
+    }
+}
+pub fn alpha_name((x, y): Name, alias: &HashMap<String, String>) -> Name {
+    match alias.get(&x) {
+        Some(z) => (z.to_string(), y),
+        None => (x, y),
+    }
+}
 impl Phi {
-    fn alpha(self, alias: &HashMap<String, knormal::Var>) -> Self {
+    fn subst(self, alias: &HashMap<String, knormal::Var>) -> Self {
         Phi {
             dst: self.dst,
+            args: self
+                .args
+                .into_iter()
+                .map(|(x, y)| (x.subst(alias), y))
+                .collect(),
+        }
+    }
+    fn alpha(self, alias: &HashMap<String, String>) -> Self {
+        Phi {
+            dst: alpha_name(self.dst, alias),
             args: self
                 .args
                 .into_iter()
@@ -123,33 +148,33 @@ pub enum Inst {
 }
 
 impl Inst {
-    fn alpha(self, alias: &HashMap<String, knormal::Var>) -> Self {
+    fn subst(self, alias: &HashMap<String, knormal::Var>) -> Self {
         match self {
-            Inst::Phi(x) => Inst::Phi(x.alpha(alias)),
+            Inst::Phi(x) => Inst::Phi(x.subst(alias)),
             Inst::CallCls { dst, label, args } => Inst::CallCls {
                 dst,
                 label,
-                args: args.into_iter().map(|x| x.alpha(alias)).collect(),
+                args: args.into_iter().map(|x| x.subst(alias)).collect(),
             },
             Inst::CallDir { dst, label, args } => Inst::CallDir {
                 dst,
                 label,
-                args: args.into_iter().map(|x| x.alpha(alias)).collect(),
+                args: args.into_iter().map(|x| x.subst(alias)).collect(),
             },
             Inst::Load { dst, ptr, idx } => Inst::Load {
                 dst,
-                ptr: ptr.alpha(alias),
-                idx: idx.alpha(alias),
+                ptr: ptr.subst(alias),
+                idx: idx.subst(alias),
             },
             Inst::Store { ptr, idx, src } => Inst::Store {
-                ptr: ptr.alpha(alias),
-                idx: idx.alpha(alias),
-                src: src.alpha(alias),
+                ptr: ptr.subst(alias),
+                idx: idx.subst(alias),
+                src: src.subst(alias),
             },
             Inst::Unary { opcode, dst, src } => Inst::Unary {
                 opcode,
                 dst,
-                src: src.alpha(alias),
+                src: src.subst(alias),
             },
             Inst::BinaryRI {
                 opcode,
@@ -159,15 +184,15 @@ impl Inst {
             } => Inst::BinaryRI {
                 opcode,
                 dst,
-                lhs: lhs.alpha(alias),
+                lhs: lhs.subst(alias),
                 rhs: rhs,
             },
             Inst::Mv { dst, src } => Inst::Mv {
                 dst,
-                src: src.alpha(alias),
+                src: src.subst(alias),
             },
             Inst::ArrayAlloc { src, dst, len, ptr } => Inst::ArrayAlloc {
-                src: src.alpha(alias),
+                src: src.subst(alias),
                 dst,
                 len,
                 ptr,
@@ -180,6 +205,68 @@ impl Inst {
             } => Inst::BinaryRR {
                 opcode,
                 dst,
+                lhs: lhs.subst(alias),
+                rhs: rhs.subst(alias),
+            },
+        }
+    }
+    fn alpha(self, alias: &HashMap<String, String>) -> Self {
+        match self {
+            Inst::Phi(x) => Inst::Phi(x.alpha(alias)),
+            Inst::CallCls { dst, label, args } => Inst::CallCls {
+                dst: alpha_name_opt(dst, alias),
+                label,
+                args: args.into_iter().map(|x| x.alpha(alias)).collect(),
+            },
+            Inst::CallDir { dst, label, args } => Inst::CallDir {
+                dst: alpha_name_opt(dst, alias),
+                label,
+                args: args.into_iter().map(|x| x.alpha(alias)).collect(),
+            },
+            Inst::Load { dst, ptr, idx } => Inst::Load {
+                dst: alpha_name(dst, alias),
+                ptr: ptr.alpha(alias),
+                idx: idx.alpha(alias),
+            },
+            Inst::Store { ptr, idx, src } => Inst::Store {
+                ptr: ptr.alpha(alias),
+                idx: idx.alpha(alias),
+                src: src.alpha(alias),
+            },
+            Inst::Unary { opcode, dst, src } => Inst::Unary {
+                opcode,
+                dst: alpha_name(dst, alias),
+                src: src.alpha(alias),
+            },
+            Inst::BinaryRI {
+                opcode,
+                dst,
+                lhs,
+                rhs,
+            } => Inst::BinaryRI {
+                opcode,
+                dst: alpha_name(dst, alias),
+                lhs: lhs.alpha(alias),
+                rhs: rhs,
+            },
+            Inst::Mv { dst, src } => Inst::Mv {
+                dst: alpha_name(dst, alias),
+                src: src.alpha(alias),
+            },
+            Inst::ArrayAlloc { src, dst, len, ptr } => Inst::ArrayAlloc {
+                src: src.alpha(alias),
+                dst: alpha_name(dst, alias),
+                len,
+                ptr,
+            },
+            Inst::BinaryRR {
+                opcode,
+                dst,
+                lhs,
+                rhs,
+            } => Inst::BinaryRR {
+                opcode,
+                dst: alpha_name(dst, alias),
                 lhs: lhs.alpha(alias),
                 rhs: rhs.alpha(alias),
             },
@@ -259,16 +346,32 @@ pub struct Block {
     pub phis: Vec<Phi>,
 }
 impl ControlFlow {
-    pub fn alpha(self, alias: &mut HashMap<String, knormal::Var>) -> Self {
+    pub fn alpha(self, alias: &HashMap<String, String>) -> Self {
         match self {
             ControlFlow::Return(Some(x)) => ControlFlow::Return(Some(x.alpha(alias))),
             ControlFlow::Branch(x, y, z) => ControlFlow::Branch(x.alpha(alias), y, z),
             _ => self,
         }
     }
+    pub fn subst(self, alias: &HashMap<String, knormal::Var>) -> Self {
+        match self {
+            ControlFlow::Return(Some(x)) => ControlFlow::Return(Some(x.subst(alias))),
+            ControlFlow::Branch(x, y, z) => ControlFlow::Branch(x.subst(alias), y, z),
+            _ => self,
+        }
+    }
 }
 impl Block {
-    pub fn alpha(self, alias: &mut HashMap<String, knormal::Var>) -> Self {
+    pub fn subst(self, alias: &HashMap<String, knormal::Var>) -> Self {
+        let inst: VecDeque<_> = self.inst.into_iter().map(|x| x.subst(alias)).collect();
+        Block {
+            label: self.label,
+            inst: inst,
+            last: self.last.subst(alias),
+            phis: self.phis.into_iter().map(|x| x.subst(alias)).collect(),
+        }
+    }
+    pub fn alpha(self, alias: &HashMap<String, String>) -> Self {
         let inst: VecDeque<_> = self.inst.into_iter().map(|x| x.alpha(alias)).collect();
         Block {
             label: self.label,
@@ -286,7 +389,14 @@ pub struct Fundef {
     pub entry: Label,
     pub blocks: Vec<Block>,
 }
-
+impl Fundef {
+    pub fn subst(self, alias: &HashMap<String, knormal::Var>) -> Self {
+        Fundef {
+            blocks: self.blocks.into_iter().map(|x| x.subst(alias)).collect(),
+            ..self
+        }
+    }
+}
 pub fn cls_to_ir(
     f: closure::Fundef,
     tyenv: &mut HashMap<usize, ty::Type>,

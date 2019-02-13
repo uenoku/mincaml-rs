@@ -18,9 +18,17 @@ pub enum Var {
     Ext(String, usize),
 }
 impl Var {
-    pub fn alpha(self, alias: &HashMap<String, Var>) -> Self {
+    pub fn subst(self, alias: &HashMap<String, Var>) -> Self {
         match self {
             Var::OpVar(x, y) if alias.contains_key(&x) => alias.get(&x).unwrap().clone(),
+            _ => self,
+        }
+    }
+    pub fn alpha(self, alias: &HashMap<String, String>) -> Self {
+        match self {
+            Var::OpVar(x, y) if alias.contains_key(&x) => {
+                Var::OpVar(alias.get(&x).unwrap().clone(), y)
+            }
             _ => self,
         }
     }
