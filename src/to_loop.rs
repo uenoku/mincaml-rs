@@ -55,7 +55,7 @@ pub enum Index {
     Unkown,
     Iter(i32),
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq)]
 pub enum Arg {
     Iter(i32),
     Ptr(GlobalWR),
@@ -63,7 +63,8 @@ pub enum Arg {
     Unkown,
     Arg(usize),
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq)]
+
 pub enum WRInfo {
     Write(GlobalWR),
     Read(GlobalWR),
@@ -107,7 +108,7 @@ impl WRInfo {
         }
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq)]
 pub enum Ptr {
     Global(String),
     Arg(usize),
@@ -367,6 +368,16 @@ impl ir::Block {
         }
         ans
     }
+    pub fn get_global_store(&self, fun: &ir::Fundef, iter: &String) -> Vec<GlobalWR> {
+        let mut ans = vec![];
+        for i in &self.inst {
+            match i.global_store(fun, iter, &mut HashMap::new()) {
+                Some(y) => ans.push(y),
+                None => (),
+            }
+        }
+        ans
+    }
     pub fn get_global_load(
         &self,
         fun: &ir::Fundef,
@@ -391,6 +402,7 @@ impl ir::Block {
         }
         None
     }
+
     pub fn get_last_instruction(&self) -> Option<ir::Inst> {
         self.inst.iter().cloned().last()
     }
@@ -477,6 +489,14 @@ impl ir::Block {
     pub fn is_self_rec_call(&self, current_fun_name: &String, fun: &ir::Fundef) -> bool {
         self.get_self_rec_call(current_fun_name, fun).is_some()
     }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq)]
+pub enum Value {
+    VBool(bool),
+    VInt(i32),
+    //VFloat(f32),
+    VNothing, // 任意のやつで書き込んでる
 }
 type Blocks = Vec<ir::Block>;
 impl ir::Fundef {
@@ -590,6 +610,9 @@ impl ir::Fundef {
         }
         mem_inst.insert(name.clone(), None);
         None
+    }
+    pub fn is_constant(&self, v: &knormal::Var) -> bool {
+        false
     }
     pub fn get_instruction(&self, name: &String) -> Option<ir::Inst> {
         for i in &self.blocks {
@@ -753,6 +776,25 @@ impl ir::Fundef {
             _ => false,
         }
     }
+
+    pub fn collect_all_write(
+        &self,
+        functions: &Functions,
+        iter: &String,
+        args: Vec<Arg>,
+    ) -> Vec<GlobalWR> {
+        let all = self.collect_all_sub(functions, args, iter);
+        let mut ans = vec![];
+        for (x, y, w) in all {
+            for z in w {
+                match z {
+                    WRInfo::Write(x) => ans.push(x),
+                    _ => (),
+                }
+            }
+        }
+        ans
+    }
     pub fn collect_all(
         &self,
         functions: &Functions,
@@ -763,6 +805,202 @@ impl ir::Fundef {
             args.push(Arg::Arg(i));
         }
         self.collect_all_sub(functions, args, iter)
+    }
+    pub fn flatten_phi(&self, phi: ir::Phi) -> ir::Phi {
+        // phiをまとめる
+        // 本当のphiじゃないので注意
+        let mut new_args = vec![];
+        for (i, j) in phi.args {
+            if i.is_constant() {
+                new_args.push((i, j).clone());
+                continue;
+            }
+
+            let inst = self.get_instruction(&i.get_name_opt().unwrap());
+            match inst {
+                Some(ir::Inst::Phi(p)) => {
+                    let p = self.flatten_phi(p);
+                    p.args.into_iter().for_each(|x| new_args.push(x));
+                }
+                _ => {
+                    new_args.push((knormal::Var::Constant(syntax::Const::CUnit), j).clone());
+                }
+            }
+        }
+        ir::Phi {
+            dst: phi.dst,
+            args: new_args,
+        }
+    }
+    pub fn write_before_load(&self, cur: &String, functions: &Functions, ptr: GlobalWR) -> bool {
+        // ptrに関してWAR closedか?
+        let b = self.get_block_ref(cur).unwrap();
+        for i in b.inst {
+            match i.get_global_laod() {}
+        }
+    }
+    pub fn not_write_if(
+        &self,
+        functions: &Functions,
+        ptr: GlobalWR,
+        args: Vec<Arg>,
+        iter: &String,
+    ) -> HashSet<Value> {
+        let mut h = HashSet::new();
+        // 返り値がhogeならfugaには書き込んでないことを保証する
+        // fugaについて帰りがhogeなら書き込んでない
+        // 存在しないものについては書き込んでない
+        // 返すものがphiであることが望ましい
+        // [0  => not_write to hoge[fuga][piyo], other => write to hoge[fuga][piyo]]みたいになる
+        let last_block = self.blocks.last().unwrap();
+        match &last_block.last {
+            ir::ControlFlow::Return(None) => {
+                let all = self.collect_all_write(functions, iter, args);
+                // すべてのwriteした領域をwriteしたことにする
+                // 絶対にwriteするならok
+                for i in all {
+                    if i == ptr {
+                        // おわり
+                        h.insert(Value::VNothing);
+                    }
+                }
+            }
+            ir::ControlFlow::Return(Some(y)) if y.is_constant() => {
+                let all = self.collect_all_write(functions, iter, args);
+                // すべてのwriteした領域をwriteしたことにする
+                for i in all {
+                    if i == ptr {
+                        // おわり
+                        h.insert(Value::VNothing);
+                    }
+                }
+            }
+            ir::ControlFlow::Return(Some(y)) => {
+                let y = self.get_instruction(&y.get_name_opt().unwrap());
+                match y {
+                    Some(ir::Inst::Phi(y)) => {
+                        // なんとかする
+                        let phi = self.flatten_phi(y);
+                        for (i, j) in phi.args {
+                            let writes_in_block = self.get_global_wr_by_block_ref(
+                                self.get_block_ref(&j),
+                                functions,
+                                iter,
+                                &mut HashMap::new(),
+                            );
+                            let writes_in_block =
+                                self.compose(functions, args.clone(), iter, writes_in_block);
+                            for p in writes_in_block {
+                                match p {
+                                    WRInfo::Write(y) if y == ptr => {
+                                        info!("{:?} {:?} found in {:?}", ptr, i, j);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        let all = self.collect_all_write(functions, iter, args);
+                        for i in all {
+                            h.insert(Value::VNothing);
+                        }
+                    }
+                }
+            }
+            _ => (),
+        };
+        h
+    }
+    pub fn compose(
+        &self,
+        functions: &Functions,
+        args: Vec<Arg>,
+        iter: &String,
+        wrinfo: Vec<WRInfo>,
+    ) -> Vec<WRInfo> {
+        let mut tmp = vec![];
+        for i in wrinfo {
+            match i {
+                WRInfo::Read((Ptr::Arg(idx), y)) => match args[idx].clone() {
+                    Arg::Ptr((Ptr::Global(s), z)) => {
+                        let mut tmp2 = z.clone();
+                        y.iter().for_each(|x| tmp2.push(x.clone()));
+                        tmp.push(WRInfo::Read((Ptr::Global(s), tmp2)));
+                    }
+                    Arg::Ptr((Ptr::Arg(s), z)) => {
+                        let mut tmp2 = z.clone();
+                        y.iter().for_each(|x| tmp2.push(x.clone()));
+                        tmp.push(WRInfo::Read((Ptr::Arg(s), tmp2)));
+                    }
+                    Arg::Arg(i) => {
+                        tmp.push(WRInfo::Read((Ptr::Arg(i), y)));
+                    }
+                    _ => {
+                        tmp.push(WRInfo::Read((Ptr::Local, y)));
+                    }
+                },
+                WRInfo::Read((Ptr::Global(x), y)) => {
+                    tmp.push(WRInfo::Read((Ptr::Global(x), y)));
+                }
+                WRInfo::Write((Ptr::Arg(idx), y)) => match args[idx].clone() {
+                    Arg::Ptr((Ptr::Global(s), z)) => {
+                        let mut tmp2 = z.clone();
+                        y.iter().for_each(|x| tmp2.push(x.clone()));
+                        tmp.push(WRInfo::Write((Ptr::Global(s), tmp2)));
+                    }
+                    Arg::Ptr((Ptr::Arg(s), z)) => {
+                        let mut tmp2 = z.clone();
+                        y.iter().for_each(|x| tmp2.push(x.clone()));
+                        tmp.push(WRInfo::Write((Ptr::Arg(s), tmp2)));
+                    }
+                    Arg::Arg(i) => {
+                        tmp.push(WRInfo::Write((Ptr::Arg(i), y)));
+                    }
+                    _ => {
+                        tmp.push(WRInfo::Write((Ptr::Local, y)));
+                    }
+                },
+                WRInfo::Write((Ptr::Global(x), y)) => {
+                    tmp.push(WRInfo::Write((Ptr::Global(x), y)));
+                }
+                WRInfo::Call(label, args) if *label == self.name.0 => {
+                    //rec_call = true;
+                }
+                WRInfo::Call(label, args2) => {
+                    let f = get_function_ref_opt(functions, &label);
+                    match f {
+                        Some(y) => {
+                            let mut subst_arg = vec![];
+                            for j in args2 {
+                                match j {
+                                    Arg::Iter(u) => subst_arg.push(Arg::Unkown),
+                                    Arg::Arg(u) => subst_arg.push(args[u].clone()),
+                                    Arg::Ptr((Ptr::Arg(u), y)) => {
+                                        let c = args[u].clone();
+                                        match c {
+                                            Arg::Ptr((x, z)) => {
+                                                let mut d = z.clone();
+                                                for i in y {
+                                                    d.push(i.clone());
+                                                }
+                                                subst_arg.push((Arg::Ptr((x, d))))
+                                            }
+                                            _ => subst_arg.push(Arg::Unkown),
+                                        }
+                                    }
+                                    u => subst_arg.push(u.clone()),
+                                }
+                            }
+                            let sub = y.collect_all_sub(functions, subst_arg, iter);
+                        }
+                        None => (),
+                    }
+                }
+                _ => {}
+            }
+        }
+        tmp
     }
 
     pub fn collect_all_sub(
@@ -972,7 +1210,7 @@ impl ir::Fundef {
             for j in z {
                 match j.clone() {
                     WRInfo::Write((Ptr::Global(x), y)) => {
-                        h.insert((x, y).clone());
+                        h.insert((Ptr::Global(x), y).clone());
                     }
                     // WRInfo::Write(y) => {
                     //     info!("{} {:?}", self.name.0, y);
@@ -984,13 +1222,18 @@ impl ir::Fundef {
             }
         }
 
-        // let graph = construct(self, functions);
+        let mut dummy_args = vec![];
+        for i in 0..self.args.len() {
+            dummy_args.push(Arg::Arg(i));
+        }
+
         info!("{:?}", h);
+        for i in h {
+            self.not_write_if(functions, i, dummy_args.clone(), &iter);
+        }
+        // let graph = construct(self, functions);
         //        info!("{:?}", graph);
         // for i in writes {
-        //    これらがaccできる or
-        //     (writeされるならばloadされる ならOK)
-        // }
         //info!("{:?}", fun);
         false
     }
