@@ -1,4 +1,7 @@
 use crate::syntax;
+pub static FLOAT: usize = 0;
+pub static INT: usize = 1;
+// 追加する
 #[derive(Debug, Clone)]
 pub enum Type {
     TyUnit,

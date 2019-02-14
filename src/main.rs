@@ -18,6 +18,7 @@ mod inline;
 mod ir;
 mod knormal;
 mod llvmcodegen;
+mod pararell;
 mod replace_ext;
 mod syntax;
 mod to_loop;
@@ -205,6 +206,21 @@ fn main() -> Result<(), Error> {
         String::from("create_tuple"),
         ty::Type::TyFun(vec![ty::Type::TyInt], Box::new(ty::Type::TyPtr)),
     );
+
+    builtin.insert(
+        String::from("fetch_and_acc"),
+        ty::Type::TyFun(
+            vec![ty::Type::TyInt, ty::Type::TyPtr], // core_id, address
+            Box::new(ty::Type::TyUnit),
+        ),
+    );
+    builtin.insert(
+        String::from("fork"),
+        ty::Type::TyFun(
+            vec![ty::Type::TyInt], // core_id
+            Box::new(ty::Type::TyUnit),
+        ),
+    );
     builtin.insert(
         String::from("create_array_float"),
         ty::Type::TyFun(
@@ -239,7 +255,7 @@ fn main() -> Result<(), Error> {
             llvmcodegen::f(p, env.tyenv, extenv, builtin, opts.filename).unwrap();
         }
         None => {
-            info!("{:?}", p[0].clone().inline_all(&p));
+            info!("{:?}", p);
             llvmcodegen::f(p, env.tyenv, HashMap::new(), builtin, opts.filename).unwrap();
         }
     };

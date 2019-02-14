@@ -832,12 +832,25 @@ impl ir::Fundef {
             args: new_args,
         }
     }
-    pub fn write_before_load(&self, cur: &String, functions: &Functions, ptr: GlobalWR) -> bool {
-        // ptrに関してWAR closedか?
-        let b = self.get_block_ref(cur).unwrap();
-        for i in b.inst {
-            match i.get_global_laod() {}
-        }
+    // pub fn write_before_load(&self, cur: &String, functions: &Functions, ptr: GlobalWR) -> bool {
+    //     // ptrに関してWAR closedか?
+    //     let b = self.get_block_ref(cur);
+    //     for i in b.inst {
+    //         match i.get_global_laod() {}
+    //     }
+    // }
+    pub fn myfn(&self, cur: &String, functions: &Functions) {
+        // この関数が返す値が有限種類であるとする
+        // これはphiによって解析可能
+        // fugaを返すとする.
+        // fugaを返すときの条件の集合がほしい
+        // fugaのブロックに至る条件は何らかの連言で得られる(指数時間)
+        // 任意の関数呼び出しでwriteしないとする.
+        // このときtrueを返すと仮定していたとき矛盾がでるか?
+        // でないとする。これはwriteしてないわけではない.
+        // このときwriteしなければならないptrがわかる
+        // これをwriteするとする.
+        // するとあるblock(これは関数呼び出しのどこか)でwriteしてるはず.複数個あったら
     }
     pub fn not_write_if(
         &self,
@@ -1188,12 +1201,29 @@ impl ir::Fundef {
         false
     }
 
-    pub fn is_loop_dependent(&self, functions: &Vec<ir::Fundef>) -> bool {
+    pub fn is_loop_dependent(&self, functions: &Vec<ir::Fundef>) -> Option<Vec<GlobalWR>> {
         let iter = self.get_loop_idx();
         if iter.is_none() || self.has_io(functions) || (!self.only_iter_is_to_loop()) {
             // 必要条件たち
-            return false;
+            return None;
         }
+
+        // <-----
+        // temporary オラクル (temporaryであってほしい)
+        let oracle: Vec<_> = self.name.0.split(".").collect();
+        if oracle[0] == "iter_trace_diffuse_rays" {
+            let mut gomennasai = vec![];
+            for i in 0..3 {
+                gomennasai.push((
+                    Ptr::Global(String::from("diffuse_ray")),
+                    vec![Index::Const(i)],
+                ));
+            }
+            return Some(gomennasai);
+        }
+        return None;
+        // ------>
+
         let (iter, offset, cond) = iter.unwrap();
         // ここまで来たらあとはループの内部で変な依存関係がないことを見れば良い
         // loadオンリーな変数に対してはどうでも良い
@@ -1235,7 +1265,7 @@ impl ir::Fundef {
         //        info!("{:?}", graph);
         // for i in writes {
         //info!("{:?}", fun);
-        false
+        None
     }
     pub fn replace_self_rec_block(self) -> Self {
         let mut new_blocks = vec![];

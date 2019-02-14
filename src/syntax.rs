@@ -80,7 +80,7 @@ pub enum Expr {
     ETuple(Vec<BE>),
     EExt(String),
 }
-static mut COUNTER: usize = 0;
+static mut COUNTER: usize = 20;
 pub fn genvar() -> usize {
     let tmp = unsafe { COUNTER };
     unsafe {
