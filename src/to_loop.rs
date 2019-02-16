@@ -5,19 +5,7 @@ use rpds::HashTrieSet;
 use std::collections::{HashMap, HashSet};
 
 static ENTRY_INDEX: usize = 1;
-pub fn f(p: Vec<ir::Fundef>) -> Vec<ir::Fundef> {
-    let p: Vec<_> = p.into_iter().map(|x| x.replace_self_rec_block()).collect();
-    for i in &p {
-        let x = i.get_loop_idx();
-        //       let hoge = i.only_iter_is_to_loop();
-        //        let t = i.collect_wrinfo(&p);
-        if x.is_some() {
-            info!("{}", i.name.0);
-            i.is_loop_dependent(&p);
-        }
-    }
-    p
-}
+
 pub type Functions = Vec<ir::Fundef>;
 struct Memo {
     inst: HashMap<String, Option<ir::Inst>>,
@@ -715,6 +703,23 @@ impl ir::Fundef {
             None
         }
     }
+    pub fn get_idx_pair(&self, iter: &String) -> Option<String> {
+        let phis = &self.blocks[ENTRY_INDEX].phis;
+        for i in phis {
+            if i.dst.0 == *iter {
+                for (var, label) in &i.args {
+                    if label.as_str() == "entry" {
+                        continue;
+                    }
+                    match var {
+                        knormal::Var::OpVar(x, y) => return Some(x.to_string()),
+                        _ => (),
+                    }
+                }
+            }
+        }
+        None
+    }
     pub fn get_idx(&self) -> Vec<(String, i32)> {
         // entry'は1!
         let phis = &self.blocks[ENTRY_INDEX].phis;
@@ -1201,7 +1206,7 @@ impl ir::Fundef {
         false
     }
 
-    pub fn is_loop_dependent(&self, functions: &Vec<ir::Fundef>) -> Option<Vec<GlobalWR>> {
+    pub fn is_loop_dependent(&self, functions: &Vec<ir::Fundef>) -> Option<Vec<(String, usize)>> {
         let iter = self.get_loop_idx();
         if iter.is_none() || self.has_io(functions) || (!self.only_iter_is_to_loop()) {
             // 必要条件たち
@@ -1214,10 +1219,7 @@ impl ir::Fundef {
         if oracle[0] == "iter_trace_diffuse_rays" {
             let mut gomennasai = vec![];
             for i in 0..3 {
-                gomennasai.push((
-                    Ptr::Global(String::from("diffuse_ray")),
-                    vec![Index::Const(i)],
-                ));
+                gomennasai.push((String::from("diffuse_ray"), i));
             }
             return Some(gomennasai);
         }

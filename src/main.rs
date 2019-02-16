@@ -184,7 +184,6 @@ pub fn get_ir(path: &String, alpha: bool) -> Result<(Vec<ir::Fundef>, Env), Erro
 
     info!("closure coversion end");
     let p = ir::f(p, &mut tyenv);
-    let p = to_loop::f(p);
     info!("ir coversion end");
     Ok((p, Env { tyenv }))
 }
@@ -194,6 +193,38 @@ fn main() -> Result<(), Error> {
     let args: Vec<String> = env::args().collect();
     let opts = parse(args).unwrap();
     let (mut p, mut env) = get_ir(&opts.filename, true)?;
+    env.tyenv.insert(ty::FLOAT, ty::Type::TyFloat);
+    env.tyenv.insert(ty::INT, ty::Type::TyInt);
+    env.tyenv.insert(
+        2,
+        ty::Type::TyFun(
+            vec![ty::Type::TyInt], // core_id
+            Box::new(ty::Type::TyUnit),
+        ),
+    );
+
+    env.tyenv.insert(
+        3,
+        ty::Type::TyFun(
+            vec![ty::Type::TyInt, ty::Type::TyPtr], // core_id, address
+            Box::new(ty::Type::TyUnit),
+        ),
+    );
+
+    env.tyenv.insert(
+        4,
+        ty::Type::TyFun(
+            vec![ty::Type::TyInt], // core_id, address
+            Box::new(ty::Type::TyUnit),
+        ),
+    );
+    env.tyenv.insert(
+        ty::VOIDFUNC,
+        ty::Type::TyFun(
+            vec![ty::Type::TyUnit], // core_id, address
+            Box::new(ty::Type::TyUnit),
+        ),
+    );
     let mut builtin = HashMap::new();
     builtin.insert(
         String::from("create_array"),
@@ -214,8 +245,16 @@ fn main() -> Result<(), Error> {
             Box::new(ty::Type::TyUnit),
         ),
     );
+
     builtin.insert(
-        String::from("fork"),
+        String::from("joinf"),
+        ty::Type::TyFun(
+            vec![ty::Type::TyInt], // core_id
+            Box::new(ty::Type::TyUnit),
+        ),
+    );
+    builtin.insert(
+        String::from("forkf"),
         ty::Type::TyFun(
             vec![ty::Type::TyInt], // core_id
             Box::new(ty::Type::TyUnit),
@@ -252,7 +291,42 @@ fn main() -> Result<(), Error> {
                 env.tyenv.insert(x, y);
             });
             debug!("{:?}", env.tyenv);
-            llvmcodegen::f(p, env.tyenv, extenv, builtin, opts.filename).unwrap();
+            if !opts.pararell {
+                llvmcodegen::f(p, env.tyenv, extenv, builtin, opts.filename.clone()).unwrap();
+            } else {
+                let (p, para) = pararell::f(p, &mut extenv, &mut env.tyenv);
+
+                let main_igai: Vec<_> = p
+                    .clone()
+                    .into_iter()
+                    .filter(|x| x.name.0.as_str() != "main")
+                    .collect();
+                llvmcodegen::f(
+                    p,
+                    env.tyenv.clone(),
+                    extenv.clone(),
+                    builtin.clone(),
+                    opts.filename.clone(),
+                )
+                .unwrap();
+                for i in 0..pararell::SUBNUM {
+                    let mut g = main_igai.clone();
+                    for j in para[i].clone() {
+                        g.push(j);
+                    }
+                    let mut filename = opts.filename.clone();
+                    filename.push_str(".");
+                    filename.push_str(&i.to_string());
+                    llvmcodegen::f(
+                        g,
+                        env.tyenv.clone(),
+                        extenv.clone(),
+                        builtin.clone(),
+                        filename.clone(),
+                    )
+                    .unwrap();
+                }
+            }
         }
         None => {
             info!("{:?}", p);

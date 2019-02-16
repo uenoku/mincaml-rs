@@ -591,6 +591,9 @@ impl<'a> ir::Block {
         let bb = emitter
             .context
             .append_basic_block(&parent, self.label.as_str());
+        if *self.label == "entry1".to_string() {
+            unreachable!("{:?}", self);
+        }
         emitter.blockenv.insert(self.label.clone(), bb);
         Ok(())
     }

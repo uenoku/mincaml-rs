@@ -1,6 +1,8 @@
 use crate::syntax;
 pub static FLOAT: usize = 0;
 pub static INT: usize = 1;
+pub static VOIDFUNC: usize = 5;
+
 // 追加する
 #[derive(Debug, Clone)]
 pub enum Type {
@@ -30,7 +32,7 @@ impl Type {
     pub fn get_args(self) -> Vec<Type> {
         match self {
             Type::TyFun(x, y) => x,
-            _ => unreachable!(),
+            _ => unreachable!("{:?}", &self),
         }
     }
 }
