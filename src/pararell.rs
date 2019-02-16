@@ -85,6 +85,26 @@ impl ir::Fundef {
             label: (main_f.clone(), ty::VOIDFUNC),
             args: vec![],
         });
+        // for i in 0..SUBNUM {
+        //     new_inst.push_back(ir::Inst::CallDir {
+        //         dst: None,
+        //         label: ("joinf".to_string(), 2), // 大丈夫だっけ
+        //         args: vec![knormal::Var::Constant(syntax::Const::CInt(i as i32))],
+        //     });
+        // }
+        // for i in 0..SUBNUM {
+        //     for j in &acc {
+        //         new_inst.push_back(ir::Inst::CallDir {
+        //             dst: None,
+        //             label: ("fetch_and_acc".to_string(), 3), // 大丈夫だっけ
+        //             args: vec![
+        //                 knormal::Var::Constant(syntax::Const::CInt(i as i32)),
+        //                 knormal::Var::Constant(syntax::Const::CPtr(j.2 as i32)),
+        //             ],
+        //         });
+        //     }
+        // }
+
         for i in 0..SUBNUM {
             new_inst.push_back(ir::Inst::CallDir {
                 dst: None,
@@ -107,6 +127,17 @@ impl ir::Fundef {
         for coreid in 0..(SUBNUM + 1) {
             let mut f2 = f2.clone();
             let mut entry_inst = f2.blocks[0].inst.clone();
+            // childはaccの初期化
+            if coreid != SUBNUM {
+                for j in &acc {
+                    entry_inst.push_back(ir::Inst::Store {
+                        src: knormal::Var::Constant(syntax::Const::CFloat(0.0f32)),
+                        ptr: knormal::Var::Constant(syntax::Const::CPtr(j.2 as i32)),
+                        idx: knormal::Var::Constant(syntax::Const::CInt(0i32)),
+                    });
+                }
+            }
+
             //　引数をロードする
             for (idx, i) in f2.args.clone().into_iter().enumerate() {
                 if i.0 != iter_arg {
