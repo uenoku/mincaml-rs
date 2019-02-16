@@ -291,10 +291,11 @@ fn main() -> Result<(), Error> {
                 env.tyenv.insert(x, y);
             });
             debug!("{:?}", env.tyenv);
-            if !opts.pararell {
+            if !opts.pararell.is_some() {
                 llvmcodegen::f(p, env.tyenv, extenv, builtin, opts.filename.clone()).unwrap();
             } else {
-                let (p, para) = pararell::f(p, &mut extenv, &mut env.tyenv);
+                let core = opts.pararell.unwrap();
+                let (p, para) = pararell::f(p, &mut extenv, &mut env.tyenv, core);
 
                 let main_igai: Vec<_> = p
                     .clone()
@@ -309,7 +310,7 @@ fn main() -> Result<(), Error> {
                     opts.filename.clone(),
                 )
                 .unwrap();
-                for i in 0..pararell::SUBNUM {
+                for i in 0..core {
                     let mut g = main_igai.clone();
                     for j in para[i].clone() {
                         g.push(j);

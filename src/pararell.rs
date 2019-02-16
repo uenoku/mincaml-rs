@@ -4,18 +4,17 @@ use crate::syntax;
 use crate::to_loop;
 use crate::ty;
 use std::collections::{HashMap, VecDeque};
-pub static SUBNUM: usize = 4;
 pub static CHILD_ARG: i32 = 124000;
-pub static CORE_NUM: usize = SUBNUM + 1;
 
 pub fn f(
     p: Vec<ir::Fundef>,
     extenv: &mut HashMap<String, usize>,
     tyenv: &mut HashMap<usize, ty::Type>,
+    core: usize,
 ) -> (Vec<ir::Fundef>, Vec<Vec<ir::Fundef>>) {
     let p: Vec<_> = p.into_iter().map(|x| x.replace_self_rec_block()).collect();
     let mut tmp = vec![];
-    let mut tmp2 = vec![vec![]; CORE_NUM];
+    let mut tmp2 = vec![vec![]; core + 1];
     for i in &p {
         let x = i.get_loop_idx();
         //       let hoge = i.only_iter_is_to_loop();
@@ -28,12 +27,12 @@ pub fn f(
                         .into_iter()
                         .map(|(x, y)| (x.clone(), y, *extenv.get(&x).unwrap() + y))
                         .collect();
-                    let (main, mainf, childs) = i.pararellize(accs, tyenv);
+                    let (main, mainf, childs) = i.pararellize(accs, tyenv, core);
 
                     info!("{:?} {:?}", main, childs);
                     tmp.push(main);
                     tmp.push(mainf);
-                    for j in 0..SUBNUM {
+                    for j in 0..core {
                         tmp2[j].push(childs[j].clone());
                     }
                 }
@@ -52,6 +51,7 @@ impl ir::Fundef {
         &self,
         acc: Vec<(String, usize, usize)>,
         tyenv: &mut HashMap<usize, ty::Type>,
+        core: usize,
     ) -> (Self, Self, Vec<Self>) {
         let (iter, offset, cond) = self.get_loop_idx().unwrap();
         // // 各種チェック(TODO)
@@ -71,7 +71,7 @@ impl ir::Fundef {
                 idx: knormal::Var::Constant(syntax::Const::CInt(0)),
             });
         }
-        for i in 0..SUBNUM {
+        for i in 0..core {
             new_inst.push_back(ir::Inst::CallDir {
                 dst: None,
                 label: ("forkf".to_string(), 4), // 大丈夫だっけ
@@ -105,7 +105,7 @@ impl ir::Fundef {
         //     }
         // }
 
-        for i in 0..SUBNUM {
+        for i in 0..core {
             new_inst.push_back(ir::Inst::CallDir {
                 dst: None,
                 label: ("joinf".to_string(), 2), // 大丈夫だっけ
@@ -124,11 +124,11 @@ impl ir::Fundef {
         }
         let mut iter_arg = iter.clone();
         iter_arg.push_str(".toloop");
-        for coreid in 0..(SUBNUM + 1) {
+        for coreid in 0..(core + 1) {
             let mut f2 = f2.clone();
             let mut entry_inst = f2.blocks[0].inst.clone();
             // childはaccの初期化
-            if coreid != SUBNUM {
+            if coreid != core {
                 for j in &acc {
                     entry_inst.push_back(ir::Inst::Store {
                         src: knormal::Var::Constant(syntax::Const::CFloat(0.0f32)),
@@ -171,7 +171,7 @@ impl ir::Fundef {
                                 dst: (pair.clone(), ty::INT),
                                 lhs: knormal::Var::OpVar(iter.clone(), ty::INT),
                                 rhs: knormal::Var::Constant(syntax::Const::CInt(
-                                    offset * CORE_NUM as i32,
+                                    offset * (core+1) as i32,
                                 )),
                             });
                             f2.blocks[idx1].inst.swap(0, idx2 + 1);
@@ -195,7 +195,7 @@ impl ir::Fundef {
             // }
             childs.push(ir::Fundef {
                 name: (
-                    if coreid == SUBNUM {
+                    if coreid == core {
                         main_f.clone()
                     } else {
                         "main".to_string()
