@@ -19,6 +19,7 @@ mod ir;
 mod knormal;
 mod llvmcodegen;
 mod pararell;
+mod pararell_shared;
 mod replace_ext;
 mod syntax;
 mod to_loop;
@@ -225,6 +226,13 @@ fn main() -> Result<(), Error> {
             Box::new(ty::Type::TyUnit),
         ),
     );
+    env.tyenv.insert(
+        6,
+        ty::Type::TyFun(
+            vec![ty::Type::TyInt, ty::Type::TyPtr, ty::Type::TyPtr], // core_id, address
+            Box::new(ty::Type::TyUnit),
+        ),
+    );
     let mut builtin = HashMap::new();
     builtin.insert(
         String::from("create_array"),
@@ -236,6 +244,14 @@ fn main() -> Result<(), Error> {
     builtin.insert(
         String::from("create_tuple"),
         ty::Type::TyFun(vec![ty::Type::TyInt], Box::new(ty::Type::TyPtr)),
+    );
+
+    builtin.insert(
+        String::from("fetch_and_acc2"),
+        ty::Type::TyFun(
+            vec![ty::Type::TyInt, ty::Type::TyPtr, ty::Type::TyPtr], // core_id, address
+            Box::new(ty::Type::TyUnit),
+        ),
     );
 
     builtin.insert(
@@ -274,27 +290,41 @@ fn main() -> Result<(), Error> {
             let mut hp = 2;
             let (glb, e) = get_ir(&x, false)?;
             let main = glb[0].clone().alloc(&mut hp, &mut extenv);
-            for i in &mut p {
-                if (i.name.0.as_str() == "main") {
-                    let tmp: Vec<_> = main.blocks[1].inst.clone().into_iter().rev().collect();
-                    for j in tmp {
-                        i.blocks[1].inst.push_front(j);
-                    }
-                    i.blocks[1].inst.push_front(ir::Inst::Store {
-                        ptr: knormal::Var::Constant(syntax::Const::CPtr(1)),
-                        idx: knormal::Var::Constant(syntax::Const::CInt(0)),
-                        src: knormal::Var::Constant(syntax::Const::CInt(hp as i32)),
-                    });
-                }
-            }
+
             e.tyenv.into_iter().for_each(|(x, y)| {
                 env.tyenv.insert(x, y);
             });
             debug!("{:?}", env.tyenv);
             if !opts.pararell.is_some() {
+                for i in &mut p {
+                    if (i.name.0.as_str() == "main") {
+                        let tmp: Vec<_> = main.blocks[1].inst.clone().into_iter().rev().collect();
+                        for j in tmp {
+                            i.blocks[1].inst.push_front(j);
+                        }
+                        i.blocks[1].inst.push_front(ir::Inst::Store {
+                            ptr: knormal::Var::Constant(syntax::Const::CPtr(1)),
+                            idx: knormal::Var::Constant(syntax::Const::CInt(0)),
+                            src: knormal::Var::Constant(syntax::Const::CInt(hp as i32)),
+                        });
+                    }
+                }
                 llvmcodegen::f(p, env.tyenv, extenv, builtin, opts.filename.clone()).unwrap();
-            } else {
+            } else if !opts.shared {
                 let core = opts.pararell.unwrap();
+                for i in &mut p {
+                    if (i.name.0.as_str() == "main") {
+                        let tmp: Vec<_> = main.blocks[1].inst.clone().into_iter().rev().collect();
+                        for j in tmp {
+                            i.blocks[1].inst.push_front(j);
+                        }
+                        i.blocks[1].inst.push_front(ir::Inst::Store {
+                            ptr: knormal::Var::Constant(syntax::Const::CPtr(1)),
+                            idx: knormal::Var::Constant(syntax::Const::CInt(0)),
+                            src: knormal::Var::Constant(syntax::Const::CInt(hp as i32)),
+                        });
+                    }
+                }
                 let (p, para) = pararell::f(p, &mut extenv, &mut env.tyenv, core);
 
                 let main_igai: Vec<_> = p
@@ -322,6 +352,55 @@ fn main() -> Result<(), Error> {
                         g,
                         env.tyenv.clone(),
                         extenv.clone(),
+                        builtin.clone(),
+                        filename.clone(),
+                    )
+                    .unwrap();
+                }
+            } else {
+                let core = opts.pararell.unwrap();
+
+                let (mut p, para) =
+                    pararell_shared::f(p, &mut extenv, &mut env.tyenv, core, &mut hp);
+                for i in &mut p {
+                    if (i.name.0.as_str() == "main") {
+                        let tmp: Vec<_> = main.blocks[1].inst.clone().into_iter().rev().collect();
+                        for j in tmp {
+                            i.blocks[1].inst.push_front(j);
+                        }
+                        i.blocks[1].inst.push_front(ir::Inst::Store {
+                            ptr: knormal::Var::Constant(syntax::Const::CPtr(1)),
+                            idx: knormal::Var::Constant(syntax::Const::CInt(0)),
+                            src: knormal::Var::Constant(syntax::Const::CInt(hp as i32)),
+                        });
+                    }
+                }
+
+                let main_igai: Vec<_> = p
+                    .clone()
+                    .into_iter()
+                    .filter(|x| x.name.0.as_str() != "main")
+                    .collect();
+                llvmcodegen::f(
+                    p,
+                    env.tyenv.clone(),
+                    extenv.clone(),
+                    builtin.clone(),
+                    opts.filename.clone(),
+                )
+                .unwrap();
+                for i in 0..core {
+                    let mut g = main_igai.clone();
+                    for j in para[i].0.clone() {
+                        g.push(j);
+                    }
+                    let mut filename = opts.filename.clone();
+                    filename.push_str(".");
+                    filename.push_str(&i.to_string());
+                    llvmcodegen::f(
+                        g,
+                        env.tyenv.clone(),
+                        para[i].1.clone(),
                         builtin.clone(),
                         filename.clone(),
                     )
