@@ -3,6 +3,7 @@ use crate::closure::CExpr;
 use crate::knormal;
 use crate::syntax;
 use crate::ty;
+use std::fmt;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -389,6 +390,29 @@ pub struct Fundef {
     pub entry: Label,
     pub blocks: Vec<Block>,
 }
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "label: {} {{", self.label)?;
+        for i in &self.inst {
+            writeln!(f, "\t{:?}", i)?;
+        }
+        writeln!(f, "\t{:?}", self.last)?;
+        writeln!(f, "}}");
+
+        Ok(())
+    }
+}
+impl fmt::Display for Fundef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "\nfunction  name: {}", self.name.0)?;
+        writeln!(f, "args {:?}", self.args)?;
+        for i in &self.blocks {
+            writeln!(f, "{}", i)?;
+        }
+        Ok(())
+    }
+}
+
 impl Fundef {
     pub fn subst(self, alias: &HashMap<String, knormal::Var>) -> Self {
         Fundef {

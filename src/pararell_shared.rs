@@ -9,6 +9,7 @@ pub static CHILD_ARG: i32 = 109000;
 pub fn f(
     p: Vec<ir::Fundef>,
     extenv: &mut HashMap<String, usize>,
+    extlen: &mut HashMap<String, usize>,
     tyenv: &mut HashMap<usize, ty::Type>,
     core: usize,
     hp: &mut usize,
@@ -31,9 +32,9 @@ pub fn f(
                         .collect();
                     let mut extc = extenv.clone();
                     let (main, mainf, childs) =
-                        i.pararellize_shared(accs, tyenv, core, &mut envs, hp);
+                        i.pararellize_shared(accs, tyenv, core, &mut envs, extlen, hp, &p);
 
-                    info!("{:?} {:?}", main, childs);
+                    ///info!("{} {:?}", main, childs);
                     tmp.push(main);
                     tmp.push(mainf);
                     for j in 0..core {
@@ -62,7 +63,9 @@ impl ir::Fundef {
         tyenv: &mut HashMap<usize, ty::Type>,
         core: usize,
         extenv: &mut Vec<HashMap<String, usize>>,
+        extlen: &mut HashMap<String, usize>,
         hp: &mut usize,
+        functions: &to_loop::Functions,
     ) -> (Self, Self, Vec<Self>) {
         let (iter, offset, cond) = self.get_loop_idx().unwrap();
         // // 各種チェック(TODO)
@@ -115,25 +118,36 @@ impl ir::Fundef {
         //         });
         //     }
         // }
+        let mut args = vec![];
+        for i in 0..self.args.len() {
+            args.push(to_loop::Arg::Arg(i));
+        }
+        let writes = self.collect_all_write(functions, &iter, args);
         for i in 0..core {
-            // 連続するものが連続していることが保証されていることが大事(めんどい)
-            // ..チェックするのめんどくせえ
-            let mut hashm: HashMap<String, HashSet<usize>> = HashMap::new();
+            let mut hashm: HashSet<String> = HashSet::new();
             for (x, y, z) in &acc {
-                match hashm.get_mut(x) {
-                    Some(w) => {
-                        w.insert(*y);
+                hashm.insert(x.clone());
+            }
+            for (x, y) in &writes {
+                match x {
+                    to_loop::Ptr::Global(z) => {
+                        let ok = y.len() == 1;
+                        if ok {
+                            hashm.insert(z.clone());
+                        } else {
+                            // 無理
+                            unreachable!()
+                        }
                     }
-                    None => {
-                        let mut ss = HashSet::new();
-                        ss.insert(y.clone());
-                        hashm.insert(x.clone(), ss);
+                    _ => {
+                        // 無理
+                        unreachable!()
                     }
                 }
             }
-            for (key, set) in hashm {
-                let offset = set.len();
-                extenv[i].insert(key, *hp);
+            for key in hashm {
+                let offset = extlen.get(&key).unwrap();
+                extenv[i].insert(key.clone(), *hp);
                 *hp += offset;
             }
         }

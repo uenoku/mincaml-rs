@@ -16,6 +16,7 @@ mod closure;
 mod hp_alloc;
 mod inline;
 mod ir;
+//mod is_dependent;
 mod knormal;
 mod llvmcodegen;
 mod pararell;
@@ -287,9 +288,10 @@ fn main() -> Result<(), Error> {
     match opts.globalname {
         Some(x) => {
             let mut extenv = HashMap::new();
+            let mut extlen = HashMap::new();
             let mut hp = 2;
             let (glb, e) = get_ir(&x, false)?;
-            let main = glb[0].clone().alloc(&mut hp, &mut extenv);
+            let main = glb[0].clone().alloc(&mut hp, &mut extenv, &mut extlen);
 
             e.tyenv.into_iter().for_each(|(x, y)| {
                 env.tyenv.insert(x, y);
@@ -361,7 +363,7 @@ fn main() -> Result<(), Error> {
                 let core = opts.pararell.unwrap();
 
                 let (mut p, para) =
-                    pararell_shared::f(p, &mut extenv, &mut env.tyenv, core, &mut hp);
+                    pararell_shared::f(p, &mut extenv, &mut extlen, &mut env.tyenv, core, &mut hp);
                 for i in &mut p {
                     if (i.name.0.as_str() == "main") {
                         let tmp: Vec<_> = main.blocks[1].inst.clone().into_iter().rev().collect();

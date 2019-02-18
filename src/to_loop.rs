@@ -102,6 +102,7 @@ pub enum Ptr {
     Arg(usize),
     Local,
 }
+
 type GlobalWR = (Ptr, Vec<Index>);
 pub fn global_wr_to_constant_eq(x: &GlobalWR, (y, z): &(String, Vec<usize>)) -> bool {
     match x {
@@ -1217,6 +1218,7 @@ impl ir::Fundef {
         // temporary オラクル (temporaryであってほしい)
         let oracle: Vec<_> = self.name.0.split(".").collect();
         if oracle[0] == "iter_trace_diffuse_rays" {
+            info!("{}", self);
             let mut gomennasai = vec![];
             for i in 0..3 {
                 gomennasai.push((String::from("diffuse_ray"), i));

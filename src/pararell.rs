@@ -19,8 +19,9 @@ pub fn f(
         let x = i.get_loop_idx();
         //       let hoge = i.only_iter_is_to_loop();
         //        let t = i.collect_wrinfo(&p);
+        info!("{}", i);
         if x.is_some() {
-            info!("{}", i.name.0);
+            //info!("{}", i.name.0);
             match i.is_loop_dependent(&p) {
                 Some(y) => {
                     let mut accs: Vec<_> = y
@@ -29,7 +30,7 @@ pub fn f(
                         .collect();
                     let (main, mainf, childs) = i.pararellize(accs, tyenv, core);
 
-                    info!("{:?} {:?}", main, childs);
+                    //info!("{:?} {:?}", main, childs);
                     tmp.push(main);
                     tmp.push(mainf);
                     for j in 0..core {
